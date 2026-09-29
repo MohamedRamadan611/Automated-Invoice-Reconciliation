@@ -32,6 +32,13 @@
 set -euf
 [ "${MVNW_VERBOSE-}" != debug ] || set -x
 
+if [ "$(uname)" = "Darwin" ] && [ -x /usr/libexec/java_home ]; then
+  JH_21="$(/usr/libexec/java_home -v 21 2>/dev/null)" || :
+  if [ -n "$JH_21" ]; then
+    export JAVA_HOME="$JH_21"
+  fi
+fi
+
 # OS specific support.
 native_path() { printf %s\\n "$1"; }
 case "$(uname)" in
@@ -43,6 +50,12 @@ esac
 
 # set JAVACMD and JAVACCMD
 set_java_home() {
+  if [ "$(uname)" = "Darwin" ] && [ -x /usr/libexec/java_home ]; then
+    JH_21="$(/usr/libexec/java_home -v 21 2>/dev/null)" || :
+    if [ -n "$JH_21" ]; then
+      JAVA_HOME="$JH_21"
+    fi
+  fi
   # For Cygwin and MinGW, ensure paths are in Unix format before anything is touched
   if [ -n "${JAVA_HOME-}" ]; then
     if [ -x "$JAVA_HOME/jre/sh/java" ]; then
