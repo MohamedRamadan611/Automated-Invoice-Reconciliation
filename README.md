@@ -19,10 +19,9 @@ An AI-augmented financial audit system that ingests supplier invoices (PDF/image
 
 - [x] **Phase 1: Docker & MySQL Persistence**
 - [x] **Phase 2: Multimodal Extraction Service & Structured DTOs**
-- [ ] **Phase 3: Deterministic Java Reconciliation Engine & Tolerance Verification**
-- [ ] **Phase 4: REST Endpoints & File Preview Streaming**
-- [ ] **Phase 5: Next.js Split-Screen Review Dashboard**
-- [ ] **Phase 6: End-to-End Integration, Docker Orchestration & Arabic Invoice Fixtures**
+- [x] **Phase 3: Deterministic Java Reconciliation Engine & REST APIs**
+- [ ] **Phase 4: Next.js Split-Screen Review Dashboard**
+- [ ] **Phase 5: End-to-End Integration, Docker Orchestration & Arabic Invoice Fixtures**
 
 ---
 
@@ -73,14 +72,45 @@ Integrates Spring AI multimodal capabilities to ingest raw invoice documents (PD
 
 ---
 
+### Phase 3: Deterministic Java Reconciliation Engine & REST APIs
+Connects multimodal invoice extraction to MySQL Purchase Orders, enforces 100% deterministic mathematical verification in Java, drafts bilingual dispute notices via Google Gemini (`gemini-3.8-flash`), and exposes the complete RESTful endpoint suite.
+
+- **Deterministic Verification Engine (`ReconciliationEngineService`):**
+  - **Step A (PO Lookup):** Validates PO reference against MySQL 8.4 (`findWithItemsByPoNumber`). Flags `PO_NOT_FOUND` and routes to `MANUAL_REVIEW` if missing.
+  - **Step B (Line Item Verification):** Matches items by SKU and semantic keyword similarity.
+    - *Price Mismatch:* `item.unitPrice().compareTo(poItem.agreedUnitPrice()) != 0` $\rightarrow$ flags `PRICE_MISMATCH`.
+    - *Quantity Mismatch:* `item.quantity().compareTo(poItem.expectedQuantity()) != 0` $\rightarrow$ flags `QUANTITY_MISMATCH`.
+    - *Unrecognized Items:* Invoiced items missing from PO $\rightarrow$ flags `UNRECOGNIZED_ITEM`.
+  - **Step C (Extra Fees Check):** Surcharges (`extraFees > 0`) $\rightarrow$ flags `EXTRA_FEE`.
+  - **Step D (Status Resolution):**
+    - Zero discrepancies $\rightarrow$ `APPROVED`.
+    - Discrepancies detected $\rightarrow$ `FLAGGED_DISCREPANCY` and triggers dispute draft generation.
+- **Bilingual Dispute Generator (`DisputeDraftingService`):**
+  - Uses Spring AI `ChatClient.Builder` with Google Gemini (`gemini-3.8-flash`) via an OpenAI-compatible endpoint.
+  - Generates formal, polite commercial letters structured into:
+    - *Section 1: Modern Standard Arabic* (`القسم الأول: إشعار الاعتراض المالي الرسمي`)
+    - *Section 2: Business English* (`Section 2: Formal Financial Dispute Notice`)
+  - Includes offline fallback generator for offline resiliency.
+- **REST Endpoints (`InvoiceController` under `/api/invoices`):**
+  - `POST /api/invoices/upload`: Multipart upload $\rightarrow$ storage $\rightarrow$ extraction $\rightarrow$ deterministic audit $\rightarrow$ returns `ReconciliationSummaryResponse`.
+  - `GET /api/invoices`: Returns list of all processed invoices (`InvoiceListItemResponse`).
+  - `GET /api/invoices/{id}`: Returns complete invoice details with audits and dispute draft.
+  - `GET /api/invoices/{id}/file`: Streams binary PDF/image content with inline `Content-Disposition` for browser previews.
+  - `POST /api/invoices/{id}/approve`: Overrides status to `APPROVED` for payment authorization.
+- **Automated Tests:**
+  - `ReconciliationEngineServiceTest`: Unit tests covering clean matches, price/qty/extra fee discrepancies, unrecognized items, and missing POs.
+  - `InvoiceControllerTest`: MockMvc tests covering upload, list, detail, file stream, and approve endpoints.
+
+---
+
 ## 🧪 Running Tests
 
 ```bash
-# Run unit tests for Phase 2 extraction service
-./mvnw test -Dtest=InvoiceExtractionServiceTest
+# Run unit tests for Phase 3 reconciliation engine
+./mvnw test -Dtest=ReconciliationEngineServiceTest
 
-# Run file storage unit tests
-./mvnw test -Dtest=FileStorageServiceTest
+# Run REST API controller tests
+./mvnw test -Dtest=InvoiceControllerTest
 
 # Run all test suites
 ./mvnw test

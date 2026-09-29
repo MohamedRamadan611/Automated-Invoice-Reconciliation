@@ -6,7 +6,11 @@ spring:
       enabled: true
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:mock-key}
+      base-url: ${AI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai/}
+      api-key: ${GEMINI_API_KEY:${AI_API_KEY:${OPENAI_API_KEY:mock-key}}}
+      chat:
+        options:
+          model: ${AI_MODEL:gemini-3.8-flash}
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3307/reconciliation_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true}
     username: ${SPRING_DATASOURCE_USERNAME:root}

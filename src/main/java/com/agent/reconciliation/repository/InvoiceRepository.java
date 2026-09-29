@@ -15,6 +15,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @EntityGraph(attributePaths = {"audits"})
     Optional<Invoice> findWithAuditsById(Long id);
 
+    @EntityGraph(attributePaths = {"audits"})
+    @org.springframework.data.jpa.repository.Query("SELECT i FROM Invoice i ORDER BY i.createdAt DESC")
+    List<Invoice> findAllWithAudits();
+
     Optional<Invoice> findByInvoiceNumber(String invoiceNumber);
 
     List<Invoice> findByPoReference(String poReference);
