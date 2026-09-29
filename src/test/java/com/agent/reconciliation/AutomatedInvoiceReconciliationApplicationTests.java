@@ -1,13 +1,12 @@
-package com.agentic.Automated_Invoice_Reconciliation;
+package com.agent.reconciliation;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+@SpringBootTest(classes = AutomatedInvoiceReconciliationApplication.class)
 class AutomatedInvoiceReconciliationApplicationTests {
 
-	@Test
-	void contextLoads() {
-	}
-
+    @Test
+    void contextLoads() {
+    }
 }

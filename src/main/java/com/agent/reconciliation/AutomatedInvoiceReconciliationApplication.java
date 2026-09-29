@@ -1,4 +1,4 @@
-package com.agentic.Automated_Invoice_Reconciliation;
+package com.agent.reconciliation;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -6,8 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class AutomatedInvoiceReconciliationApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(AutomatedInvoiceReconciliationApplication.class, args);
-	}
-
+    public static void main(String[] args) {
+        SpringApplication.run(AutomatedInvoiceReconciliationApplication.class, args);
+    }
 }
