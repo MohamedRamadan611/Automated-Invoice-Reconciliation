@@ -47,7 +47,7 @@ public class PurchaseOrder {
     private Instant createdAt;
 
     @Builder.Default
-    @OneToMany(mappedBy = "po", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "purchaseOrder", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PurchaseOrderItem> items = new ArrayList<>();
 
     @PrePersist
@@ -65,11 +65,11 @@ public class PurchaseOrder {
 
     public void addItem(PurchaseOrderItem item) {
         items.add(item);
-        item.setPo(this);
+        item.setPurchaseOrder(this);
     }
 
     public void removeItem(PurchaseOrderItem item) {
         items.remove(item);
-        item.setPo(null);
+        item.setPurchaseOrder(null);
     }
 }

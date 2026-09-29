@@ -10,9 +10,9 @@ import java.util.Optional;
 @Repository
 public interface PurchaseOrderItemRepository extends JpaRepository<PurchaseOrderItem, Long> {
 
-    List<PurchaseOrderItem> findByPoId(Long poId);
+    List<PurchaseOrderItem> findByPurchaseOrderId(Long purchaseOrderId);
 
-    List<PurchaseOrderItem> findByPoPoNumber(String poNumber);
+    List<PurchaseOrderItem> findByPurchaseOrderPoNumber(String poNumber);
 
-    Optional<PurchaseOrderItem> findByPoIdAndSkuCode(Long poId, String skuCode);
+    Optional<PurchaseOrderItem> findByPurchaseOrderIdAndSkuCode(Long purchaseOrderId, String skuCode);
 }

@@ -26,7 +26,7 @@ public class PurchaseOrderItem {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "po_id", nullable = false)
-    private PurchaseOrder po;
+    private PurchaseOrder purchaseOrder;
 
     @Column(name = "sku_code", nullable = false, length = 50)
     private String skuCode;
