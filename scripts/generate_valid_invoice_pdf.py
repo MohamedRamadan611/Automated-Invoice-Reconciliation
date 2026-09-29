@@ -1,24 +1,16 @@
-%PDF-1.4
-%‚„œ”
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
-endobj
-4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
-endobj
-6 0 obj
-<< /Length 2759 >>
-stream
-BT
+#!/usr/bin/env python3
+"""
+Generates a 100% valid, standards-compliant PDF 1.4 invoice.
+Requires zero external dependencies (pure Python).
+"""
+import sys
+import os
+
+def create_invoice_pdf(output_path):
+    # Prepare text content stream
+    # Note: Standard PDF Type 1 fonts (Helvetica) support ASCII / WinAnsiEncoding.
+    # We display clean bilingual and transliterated labels.
+    content_stream = """BT
 /F1 20 Tf
 50 740 Td
 (AL-WADI COMMERCIAL FARMS) Tj
@@ -223,19 +215,62 @@ BT
 50 280 Td
 (Al-Wadi Farms - Finance & Commercial Accounts Department) Tj
 ET
-endstream
-endobj
-xref
-0 7
-0000000000 65535 f 
-0000000015 00000 n 
-0000000064 00000 n 
-0000000121 00000 n 
-0000000257 00000 n 
-0000000359 00000 n 
-0000000456 00000 n 
-trailer
-<< /Size 7 /Root 1 0 R >>
-startxref
-3267
-%%EOF
+"""
+    # Clean whitespace
+    stream_bytes = content_stream.strip().encode('latin-1')
+    stream_length = len(stream_bytes)
+
+    objects = []
+    # Obj 1: Catalog
+    objects.append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+    # Obj 2: Pages
+    objects.append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+    # Obj 3: Page
+    objects.append("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj\n")
+    # Obj 4: Font F1 (Helvetica-Bold)
+    objects.append("4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n")
+    # Obj 5: Font F2 (Helvetica)
+    objects.append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n")
+    # Obj 6: Contents
+    obj6_header = f"6 0 obj\n<< /Length {stream_length} >>\nstream\n"
+    obj6_footer = "\nendstream\nendobj\n"
+
+    # Assemble and calculate byte offsets for xref
+    pdf_header = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    
+    body = bytearray()
+    body.extend(pdf_header.encode('latin-1'))
+    
+    xref_offsets = [0] # obj 0 offset
+    
+    for i, obj_str in enumerate(objects):
+        xref_offsets.append(len(body))
+        body.extend(obj_str.encode('latin-1'))
+        
+    # Add Obj 6
+    xref_offsets.append(len(body))
+    body.extend(obj6_header.encode('latin-1'))
+    body.extend(stream_bytes)
+    body.extend(obj6_footer.encode('latin-1'))
+    
+    startxref = len(body)
+    
+    # Xref table
+    xref_str = f"xref\n0 {len(xref_offsets)}\n"
+    xref_str += "0000000000 65535 f \n"
+    for offset in xref_offsets[1:]:
+        xref_str += f"{offset:010d} 00000 n \n"
+        
+    trailer_str = f"trailer\n<< /Size {len(xref_offsets)} /Root 1 0 R >>\nstartxref\n{startxref}\n%%EOF\n"
+    
+    body.extend(xref_str.encode('latin-1'))
+    body.extend(trailer_str.encode('latin-1'))
+    
+    with open(output_path, "wb") as f:
+        f.write(body)
+        
+    print(f"Valid PDF written to: {output_path} ({len(body)} bytes)")
+
+if __name__ == "__main__":
+    out = sys.argv[1] if len(sys.argv) > 1 else "sample_invoice_mismatch.pdf"
+    create_invoice_pdf(out)

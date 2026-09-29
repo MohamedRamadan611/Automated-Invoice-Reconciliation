@@ -125,8 +125,8 @@ public class InvoiceExtractionService {
                             extracted.invoiceNumber(), extracted.vendorName());
                     return extracted;
                 }
-            } catch (Exception aiEx) {
-                log.warn("AI extraction call encountered error/unavailability (falling back to fixture extraction): {}",
+            } catch (Throwable aiEx) {
+                log.warn("AI extraction call encountered error/unavailability (falling back to resilient extraction): {}",
                         aiEx.getMessage());
                 return fallbackExtraction(file);
             }

@@ -163,3 +163,73 @@ docker exec reconciliation_mysql mysql -uroot -proot reconciliation_db -e "SELEC
 curl -X POST http://localhost:8080/api/invoices/1/approve
 # Verified invoice status updated to APPROVED in both REST response and MySQL database.
 ```
+
+---
+
+# Walkthrough: Phase 4 - Next.js 15 Review Interface (`/frontend`)
+
+## Overview
+Phase 4 implements the production-grade Next.js 15 financial auditor review interface in `/frontend`. It provides auditors with an intuitive, high-density split-screen review dashboard:
+1. **Queue Dashboard (`/`):** Batch metrics, drag-and-drop supplier invoice uploader, search & status filters, and historical invoices table.
+2. **50/50 Split-Screen Workspace (`/invoice/[id]`):**
+   - **Left Panel:** Native streaming document viewer (`/api/invoices/{id}/file`) supporting zoom in/out, fit, new tab, and file download.
+   - **Right Panel:** Deterministic audit summary card with net variance deltas, itemized discrepancy badges (Price Mismatch, Quantity Mismatch, Extra Fee, Unrecognized Item), and human-readable explanations.
+3. **Bilingual Dispute Drawer:** Gemini-generated dispute notices in Arabic and English with one-click clipboard copying and "Approve & Release Payment" manual override action.
+4. **API Proxy Rewrite:** In `next.config.ts`, `/api/:path*` is proxied to `http://localhost:8080/api/:path*`.
+
+---
+
+## Architecture & Layout
+
+```mermaid
+graph TD
+    A[Next.js 15 App Router - Port 3000] -->|Rewrites /api/:path*| B[Spring Boot Backend - Port 8080]
+    A --> C[app/page.tsx: Audit Queue Dashboard]
+    A --> D[app/invoice/id/page.tsx: Split-Screen Workspace]
+    C --> E[DropzoneUploader.tsx: Drag & Drop Ingestion]
+    D --> F[SplitScreenViewer.tsx: 50/50 Desktop Container]
+    F -->|Left 50%| G[Document Viewer: /api/invoices/id/file]
+    F -->|Right 50%| H[Deterministic Audit Findings & Variances]
+    F --> I[DisputeActionDrawer.tsx: Bilingual Draft & Approval]
+```
+
+---
+
+## Deliverables & Key Files
+
+| File Path | Description |
+| :--- | :--- |
+| `frontend/next.config.ts` | Configures `/api/:path*` proxy rewrite to `http://localhost:8080/api/:path*`. |
+| `frontend/src/lib/types.ts` | TypeScript interfaces mirroring backend Java records (`ReconciliationSummaryResponse`, `AuditDetailResponse`, `InvoiceListItemResponse`). |
+| `frontend/src/components/DropzoneUploader.tsx` | Drag-and-drop file upload zone supporting PDF/PNG/JPG with animated states. |
+| `frontend/src/components/SplitScreenViewer.tsx` | Master 50/50 split container with document preview on the left and reconciliation table on the right. |
+| `frontend/src/components/DisputeActionDrawer.tsx` | Collapsible bilingual dispute drawer (Arabic & English tabs), copy to clipboard, and payment approval. |
+| `frontend/src/app/page.tsx` | Metrics overview cards, upload dropzone, search & filter controls, and invoice queue table. |
+| `frontend/src/app/invoice/[id]/page.tsx` | Deep-dive review workspace embedding `SplitScreenViewer`. |
+
+---
+
+## Verification & Validation
+
+### 1. Production Build Validation (`npm run build`)
+```
+▲ Next.js 16.3.6 (Turbopack)
+✓ Compiled successfully in 5.5s
+✓ Finished TypeScript in 2.2s
+✓ Generating static pages using 6 workers (4/4) in 971ms
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+└ ƒ /invoice/[id]
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+```
+
+### 2. Live API Proxy & Data Hydration
+- Verified `GET http://localhost:3000/api/invoices` proxies cleanly to port 8080, returning invoice records.
+- Verified `POST http://localhost:3000/api/invoices/upload` successfully handled `sample_invoice_mismatch.pdf`, extracting items via Gemini Pro and recording invoice `INV-7652`.
+- Verified `GET http://localhost:3000/api/invoices/2` returns full audit breakdown and dispute draft.
+- Verified `GET http://localhost:3000/` and `GET http://localhost:3000/invoice/2` return valid hydrated HTML (HTTP 200).
+

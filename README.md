@@ -20,7 +20,7 @@ An AI-augmented financial audit system that ingests supplier invoices (PDF/image
 - [x] **Phase 1: Docker & MySQL Persistence**
 - [x] **Phase 2: Multimodal Extraction Service & Structured DTOs**
 - [x] **Phase 3: Deterministic Java Reconciliation Engine & REST APIs**
-- [ ] **Phase 4: Next.js Split-Screen Review Dashboard**
+- [x] **Phase 4: Next.js Split-Screen Review Dashboard**
 - [ ] **Phase 5: End-to-End Integration, Docker Orchestration & Arabic Invoice Fixtures**
 
 ---
@@ -103,6 +103,51 @@ Connects multimodal invoice extraction to MySQL Purchase Orders, enforces 100% d
 
 ---
 
+### Phase 4: Next.js 15 Review Interface (`/frontend`)
+Implements an auditor-first desktop workspace with high information density, live document previews, and bilingual dispute resolution.
+
+- **Queue Dashboard (`/`):**
+  - Financial metric cards (Total Processed, Discrepancies Flagged, Approved, Audited EGP Volume).
+  - Animated `DropzoneUploader` supporting PDF, PNG, and JPG documents.
+  - Search and status filter controls (`ALL`, `FLAGGED_DISCREPANCY`, `APPROVED`, `MANUAL_REVIEW`).
+  - Invoice queue table with status badges and quick workspace links.
+- **50/50 Split-Screen Review Workspace (`/invoice/[id]`):**
+  - **Left Viewport (Document Viewer):** Native document frame (`/api/invoices/{id}/file`) with zoom in, zoom out, 100% reset, new tab, and file download actions.
+  - **Right Viewport (Reconciliation Table):**
+    - Metadata ribbon with invoice number, vendor name, PO reference, status pill, and billed total.
+    - Financial variance card displaying net difference against agreed PO totals.
+    - Itemized audit cards with color-coded badges (`PRICE_MISMATCH`, `EXTRA_FEE`, `QUANTITY_MISMATCH`, `UNRECOGNIZED_ITEM`) and human-readable explanations.
+    - Soft rose variance highlighting (`bg-rose-50 text-rose-800 border-rose-200`) for discrepancy lines.
+- **Gemini AI Bilingual Dispute Drawer (`DisputeActionDrawer`):**
+  - Displays formal dispute notice in Arabic (`العربية`) and English with tab toggles.
+  - "Copy Draft" button with instant clipboard visual confirmation.
+  - "Approve & Release Payment" button issuing `POST /api/invoices/{id}/approve` with live status update.
+- **Proxy Configuration:** Configured `next.config.ts` rewrite proxying `/api/:path*` to `http://localhost:8080/api/:path*`.
+
+---
+
+## 🚀 Running the Project Locally
+
+### 1. Database
+```bash
+docker compose up -d
+```
+
+### 2. Backend (Spring Boot 3.5 on Port 8080)
+Ensure `.env` contains your Gemini API key:
+```bash
+./mvnw spring-boot:run
+```
+
+### 3. Frontend (Next.js 15 on Port 3000)
+```bash
+cd frontend
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) to access the auditor dashboard.
+
+---
+
 ## 🧪 Running Tests
 
 ```bash
@@ -112,6 +157,10 @@ Connects multimodal invoice extraction to MySQL Purchase Orders, enforces 100% d
 # Run REST API controller tests
 ./mvnw test -Dtest=InvoiceControllerTest
 
-# Run all test suites
+# Run all backend test suites
 ./mvnw test
+
+# Validate frontend production build
+cd frontend && npm run build
 ```
+
