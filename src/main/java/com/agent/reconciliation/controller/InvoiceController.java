@@ -4,8 +4,12 @@ import com.agent.reconciliation.domain.dto.ExtractedInvoice;
 import com.agent.reconciliation.domain.dto.InvoiceListItemResponse;
 import com.agent.reconciliation.domain.dto.ReconciliationSummaryResponse;
 import com.agent.reconciliation.domain.entity.Invoice;
+import com.agent.reconciliation.domain.entity.PurchaseOrder;
 import com.agent.reconciliation.domain.entity.ReconciliationStatus;
 import com.agent.reconciliation.repository.InvoiceRepository;
+import com.agent.reconciliation.repository.PurchaseOrderRepository;
+import com.agent.reconciliation.service.DisputeDraftingService;
+import com.agent.reconciliation.service.EmailNotificationService;
 import com.agent.reconciliation.service.FileStorageService;
 import com.agent.reconciliation.service.InvoiceExtractionService;
 import com.agent.reconciliation.service.ReconciliationEngineService;
@@ -40,20 +44,29 @@ public class InvoiceController {
     private static final Logger log = LoggerFactory.getLogger(InvoiceController.class);
 
     private final InvoiceRepository invoiceRepository;
+    private final PurchaseOrderRepository purchaseOrderRepository;
     private final FileStorageService fileStorageService;
     private final InvoiceExtractionService extractionService;
     private final ReconciliationEngineService reconciliationEngineService;
+    private final EmailNotificationService emailNotificationService;
+    private final DisputeDraftingService disputeDraftingService;
     private final ObjectMapper objectMapper;
 
     public InvoiceController(InvoiceRepository invoiceRepository,
+                             PurchaseOrderRepository purchaseOrderRepository,
                              FileStorageService fileStorageService,
                              InvoiceExtractionService extractionService,
                              ReconciliationEngineService reconciliationEngineService,
+                             EmailNotificationService emailNotificationService,
+                             DisputeDraftingService disputeDraftingService,
                              ObjectMapper objectMapper) {
         this.invoiceRepository = invoiceRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
         this.fileStorageService = fileStorageService;
         this.extractionService = extractionService;
         this.reconciliationEngineService = reconciliationEngineService;
+        this.emailNotificationService = emailNotificationService;
+        this.disputeDraftingService = disputeDraftingService;
         this.objectMapper = objectMapper;
     }
 
@@ -170,32 +183,88 @@ public class InvoiceController {
     }
 
     /**
-     * Approves an invoice for payment override.
+     * Approves an invoice for payment override and sends manager responsibility sign-off email.
      */
     @PostMapping("/{id}/approve")
-    public ResponseEntity<ReconciliationSummaryResponse> approveInvoice(@PathVariable("id") Long id) {
+    public ResponseEntity<ReconciliationSummaryResponse> approveInvoice(
+            @PathVariable("id") Long id,
+            @RequestParam(value = "email", required = false) String email,
+            @RequestParam(value = "notes", required = false) String notes) {
         Invoice invoice = invoiceRepository.findWithAuditsById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
 
         invoice.setReconciliationStatus(ReconciliationStatus.APPROVED);
         Invoice saved = invoiceRepository.save(invoice);
-        log.info("Invoice {} manually approved for payment.", id);
+        log.info("Invoice {} manually approved for payment. Dispatching manager authorization email...", id);
 
-        return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
+        var dispatchResult = emailNotificationService.sendApprovalEmailToManager(saved, email, notes);
+        log.info("Approval notification result: {}", dispatchResult.message());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("X-Email-Dispatched", String.valueOf(dispatchResult.success()));
+        headers.add("X-Email-Recipient", dispatchResult.recipient());
+        headers.add("X-Email-Simulated", String.valueOf(dispatchResult.simulated()));
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(reconciliationEngineService.toSummaryResponse(saved));
     }
 
     /**
-     * Rejects an invoice due to unapproved variances and confirms issuing formal dispute notice to vendor.
+     * Rejects an invoice due to unapproved variances and transmits formal dispute notice to vendor (with CC to manager).
      */
     @PostMapping("/{id}/reject")
-    public ResponseEntity<ReconciliationSummaryResponse> rejectInvoice(@PathVariable("id") Long id) {
+    public ResponseEntity<ReconciliationSummaryResponse> rejectInvoice(
+            @PathVariable("id") Long id,
+            @RequestParam(value = "email", required = false) String email,
+            @RequestParam(value = "lang", defaultValue = "BOTH") String lang) {
         Invoice invoice = invoiceRepository.findWithAuditsById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
 
         invoice.setReconciliationStatus(ReconciliationStatus.REJECTED);
         Invoice saved = invoiceRepository.save(invoice);
-        log.info("Invoice {} rejected; formal dispute notice confirmed for vendor '{}'.", id, invoice.getVendorName());
+        log.info("Invoice {} rejected. Dispatching vendor dispute notification (lang: {})...", id, lang);
 
-        return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
+        var dispatchResult = emailNotificationService.sendDisputeEmailToVendor(saved, email, lang);
+        log.info("Dispute notification result: {}", dispatchResult.message());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("X-Email-Dispatched", String.valueOf(dispatchResult.success()));
+        headers.add("X-Email-Recipient", dispatchResult.recipient());
+        headers.add("X-Email-Simulated", String.valueOf(dispatchResult.simulated()));
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(reconciliationEngineService.toSummaryResponse(saved));
+    }
+
+    /**
+     * Regenerates the Gemini AI dispute draft on demand and persists it directly into the invoice record.
+     */
+    @PostMapping("/{id}/generate-dispute")
+    public ResponseEntity<ReconciliationSummaryResponse> generateDisputeDraft(@PathVariable("id") Long id) {
+        Invoice invoice = invoiceRepository.findWithAuditsById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
+
+        PurchaseOrder po = null;
+        if (invoice.getPoReference() != null && !invoice.getPoReference().isBlank()) {
+            po = purchaseOrderRepository.findByPoNumber(invoice.getPoReference().trim()).orElse(null);
+        }
+
+        try {
+            log.info("Generating dynamic Gemini AI dispute draft for invoice ID: {} (Vendor: {})", id, invoice.getVendorName());
+            String generatedDraft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
+            invoice.setDisputeDraft(generatedDraft);
+            Invoice saved = invoiceRepository.save(invoice);
+            log.info("Persisted regenerated dispute draft for invoice ID: {}", id);
+
+            return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
+        } catch (Throwable ex) {
+            log.error("Error generating dispute draft for invoice {}: {}. Applying fallback template.", id, ex.getMessage());
+            String fallbackDraft = disputeDraftingService.generateFallbackDisputeTemplate(invoice, po, invoice.getAudits());
+            invoice.setDisputeDraft(fallbackDraft);
+            Invoice saved = invoiceRepository.save(invoice);
+            return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
+        }
     }
 }

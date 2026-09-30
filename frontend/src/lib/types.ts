@@ -16,6 +16,19 @@ export interface AuditDetailResponse {
   expectedValue?: number | null;
   actualValue?: number | null;
   explanation: string;
+  explanationArabic?: string | null;
+  explanationEnglish?: string | null;
+}
+
+export interface BilledLineItemResponse {
+  description: string;
+  skuCode?: string | null;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  lineTotal?: number | null;
+  matchStatus: string;
+  statusLabel: string;
+  auditExplanation?: string | null;
 }
 
 export interface ReconciliationSummaryResponse {
@@ -28,7 +41,10 @@ export interface ReconciliationSummaryResponse {
   expectedTotal: number;
   discrepancyCount: number;
   audits: AuditDetailResponse[];
+  billedItems?: BilledLineItemResponse[];
   disputeDraft?: string | null;
+  disputeDraftArabic?: string | null;
+  disputeDraftEnglish?: string | null;
   fileDownloadUri: string;
 }
 
@@ -41,4 +57,12 @@ export interface InvoiceListItemResponse {
   reconciliationStatus: ReconciliationStatus | string;
   discrepancyCount: number;
   createdAt: string;
+}
+
+export interface ErrorResponse {
+  status: number;
+  error: string;
+  message: string;
+  path: string;
+  timestamp: string;
 }

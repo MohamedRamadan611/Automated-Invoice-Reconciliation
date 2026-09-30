@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2 } from "lucide-react";
 import type { ReconciliationSummaryResponse } from "@/lib/types";
+import { uploadInvoice } from "@/lib/api";
 
 interface DropzoneUploaderProps {
   onSuccess?: (data: ReconciliationSummaryResponse) => void;
@@ -76,21 +77,8 @@ export default function DropzoneUploader({
     setUploadProgress("Uploading file & extracting line items via Gemini Pro...");
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch("/api/invoices/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Upload failed with HTTP status ${response.status}`);
-      }
-
-      setUploadProgress("Executing deterministic reconciliation & generating audit...");
-      const summary: ReconciliationSummaryResponse = await response.json();
+      setUploadProgress("Uploading file & extracting line items via Gemini Pro...");
+      const summary = await uploadInvoice(file);
 
       setSuccessInfo(
         `Invoice ${summary.invoiceNumber} processed successfully! Status: ${summary.reconciliationStatus}`

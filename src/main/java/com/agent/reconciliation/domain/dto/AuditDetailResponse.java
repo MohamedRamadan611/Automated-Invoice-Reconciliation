@@ -12,5 +12,19 @@ public record AuditDetailResponse(
         String itemDescription,
         BigDecimal expectedValue,
         BigDecimal actualValue,
-        String explanation
-) {}
+        String explanation,
+        String explanationArabic,
+        String explanationEnglish
+) {
+    public AuditDetailResponse(
+            Long id,
+            String issueType,
+            String skuCode,
+            String itemDescription,
+            BigDecimal expectedValue,
+            BigDecimal actualValue,
+            String explanation
+    ) {
+        this(id, issueType, skuCode, itemDescription, expectedValue, actualValue, explanation, null, null);
+    }
+}

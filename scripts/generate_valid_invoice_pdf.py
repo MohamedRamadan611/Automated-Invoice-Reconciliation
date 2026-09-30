@@ -107,13 +107,13 @@ BT
 /F1 8 Tf
 80 554 Td
 0.3 0.3 0.3 rg
-(SKU: SKU-TOMATO-RED | Harvest Grade A) Tj
+(SKU: SKU-TOMATO-RED | Premium Grade A) Tj
 ET
 0 0 0 rg
 BT
 /F2 9 Tf
 320 564 Td
-(100 kg) Tj
+(100.00 kg) Tj
 380 564 Td
 (25.00 EGP) Tj
 480 564 Td
@@ -127,19 +127,19 @@ BT
 60 534 Td
 (2) Tj
 80 534 Td
-(Yellow Spring Onions [Basal Asfar Farz Awwal]) Tj
+(Red Onions - First Grade [Basal Ahmar Daraga Oula]) Tj
 ET
 BT
 /F1 8 Tf
 80 524 Td
 0.3 0.3 0.3 rg
-(SKU: SKU-ONION-YELLOW | 50kg Sacks) Tj
+(SKU: SKU-ONION-YELLOW | 50kg Bags) Tj
 ET
 0 0 0 rg
 BT
 /F2 9 Tf
 320 534 Td
-(50 kg) Tj
+(50.00 kg) Tj
 380 534 Td
 (15.00 EGP) Tj
 480 534 Td
@@ -159,7 +159,7 @@ BT
 /F1 8 Tf
 80 494 Td
 0.8 0.2 0.2 rg
-(Note: Surcharge added per order dispatch) Tj
+(SKU: SURCHARGE | Unapproved Porterage Fee) Tj
 ET
 0 0 0 rg
 BT
@@ -174,34 +174,42 @@ ET
 
 50 470 m 562 470 l S
 
-% Totals Box
+% Totals Box (Enhanced with Net Produce Weight)
 0.96 0.97 0.98 rg
-350 380 212 80 re f
+330 365 232 95 re f
 0.8 0.8 0.8 RG
-350 380 212 80 re s
+330 365 232 95 re s
 
 0 0 0 rg
 BT
+/F1 9 Tf
+345 442 Td
+(Total Net Weight:) Tj
+470 442 Td
+(150.00 kg) Tj
+ET
+
+BT
 /F2 9 Tf
-365 440 Td
-(Subtotal Items:) Tj
-470 440 Td
+345 424 Td
+(Subtotal Produce:) Tj
+470 424 Td
 (3,250.00 EGP) Tj
-365 422 Td
-(Delivery / Freight:) Tj
-470 422 Td
+345 408 Td
+(Freight Surcharge:) Tj
+470 408 Td
 (150.00 EGP) Tj
 ET
 
 0.8 0.8 0.8 RG
-350 410 m 562 410 l S
+330 396 m 562 396 l S
 
 0 0 0 rg
 BT
 /F1 11 Tf
-365 392 Td
+345 376 Td
 (Grand Total:) Tj
-465 392 Td
+460 376 Td
 (3,400.00 EGP) Tj
 ET
 

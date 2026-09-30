@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #0f172a; }
+    .container { max-width: 780px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+    .header { background: linear-gradient(135deg, #881337 0%, #be123c 100%); color: #ffffff; padding: 28px 24px; }
+    .header h1 { margin: 0 0 6px 0; font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+    .header p { margin: 0; font-size: 13px; opacity: 0.92; }
+    .body-content { padding: 24px; }
+    .meta-grid { display: table; width: 100%; margin-bottom: 24px; background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .meta-col { display: table-cell; width: 50%; vertical-align: top; font-size: 13px; line-height: 1.8; }
+    .badge-danger { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; background-color: #ffe4e6; color: #9f1239; border: 1px solid #fecdd3; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; margin-bottom: 24px; font-size: 13px; }
+    th { background-color: #f8fafc; text-align: left; padding: 12px; border-bottom: 2px solid #cbd5e1; font-weight: 700; color: #334155; font-size: 12px; }
+    .audit-row { border-bottom: 1px solid #e2e8f0; }
+    .col-issue { padding: 12px; vertical-align: top; width: 20%; }
+    .col-desc { padding: 12px; vertical-align: top; width: 25%; }
+    .col-price { padding: 12px; vertical-align: top; text-align: right; width: 20%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; font-size: 12px; }
+    .col-reason { padding: 12px; vertical-align: top; width: 35%; }
+    .issue-title { font-weight: 700; font-size: 13px; }
+    .issue-subtitle { font-size: 11px; color: #64748b; font-family: monospace; }
+    .issue-price-mismatch { color: #dc2626; }
+    .issue-quantity-mismatch { color: #d97706; }
+    .issue-extra-fee { color: #b91c1c; }
+    .issue-unrecognized-item { color: #7c3aed; }
+    .issue-po-not-found { color: #475569; }
+    .item-description { font-weight: 600; color: #0f172a; font-size: 13px; }
+    .draft-card-ar { direction: rtl; text-align: right; background-color: #fffdf5; border: 1px solid #fef3c7; border-right: 5px solid #d97706; padding: 20px; border-radius: 8px; margin-bottom: 18px; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; font-size: 13px; line-height: 1.8; color: #1e293b; }
+    .draft-card-en { direction: ltr; text-align: left; background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #2563eb; padding: 20px; border-radius: 8px; margin-bottom: 22px; font-size: 13px; line-height: 1.8; color: #1e293b; }
+    .action-box { background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 8px; padding: 18px; font-size: 13px; color: #881337; margin-top: 20px; line-height: 1.7; }
+    .footer { background: #f8fafc; padding: 18px 24px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>COMMERCIAL DISPUTE &amp; DISCREPANCY NOTICE</h1>
+      <p>إشعار رسمي بوجود فروقات مالية واعتراض محاسبي &bull; Accounts Payable Audit Department</p>
+    </div>
+    <div class="body-content">
+      <p style="font-size: 14px; line-height: 1.6;">
+        Dear <strong>{{vendorName}}</strong> Billing &amp; Finance Team / السادة إدارة الحسابات المحترمون،
+      </p>
+      <p style="font-size: 13px; line-height: 1.7; color: #334155;">
+        Following our automated pre-payment audit against <strong>Purchase Order {{poReference}}</strong>, discrepancies exceeding our contractual tolerance thresholds were identified. Consequently, invoice <strong>{{invoiceNumber}}</strong> has been <strong>REJECTED</strong> and payment processing is placed on hold until amended.
+      </p>
+      
+      <div class="meta-grid">
+        <div class="meta-col">
+          <div><strong>Invoice Number / رقم الفاتورة:</strong> {{invoiceNumber}}</div>
+          <div><strong>PO Reference / أمر التوريد:</strong> {{poReference}}</div>
+          <div><strong>Status / الحالة:</strong> <span class="badge-danger">REJECTED / تم رفض الصرف للاعتراض</span></div>
+        </div>
+        <div class="meta-col" style="text-align: right;">
+          <div><strong>Invoiced Total / إجمالي الفاتورة:</strong> <span style="color: #be123c; font-weight: 800; font-size: 15px;">{{invoicedTotal}} EGP</span></div>
+          <div><strong>Expected Total / الإجمالي المعتمد بأمر التوريد:</strong> <strong>{{expectedTotal}} EGP</strong></div>
+          <div><strong>Audit Timestamp / تاريخ التدقيق:</strong> {{auditTimestamp}}</div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 24px; color: #0f172a;">
+        Reconciliation Variance Findings / تفاصيل الفروقات المحاسبية وأسبابها
+      </h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Issue</th>
+            <th>Item Description</th>
+            <th style="text-align: right;">PO vs Billed</th>
+            <th>Audit Reason &amp; Explanation</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{auditRows}}
+        </tbody>
+      </table>
+
+      <h3 style="font-size: 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 28px; color: #0f172a;">
+        Dispute Statement / صيغة إشعار الاعتراض المالي الرسمي
+      </h3>
+
+      {{disputeBody}}
+
+      <!-- Call to Action Box -->
+      <div class="action-box">
+        {{actionBox}}
+      </div>
+    </div>
+
+    <div class="footer">
+      Automated Financial Reconciliation &amp; Audit Trail &bull; Accounts Payable Department<br/>
+      Inquiries may be directed to accounts-payable@company.com referencing PO {{poReference}} and Invoice {{invoiceNumber}}.
+    </div>
+  </div>
+</body>
+</html>

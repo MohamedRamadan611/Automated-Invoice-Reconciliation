@@ -1,8 +1,8 @@
 package com.agent.reconciliation.service;
 
+import com.agent.reconciliation.config.AppProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -28,14 +28,21 @@ public class FileStorageService {
     private static final Logger log = LoggerFactory.getLogger(FileStorageService.class);
     private final Path uploadDirectory;
 
-    public FileStorageService(@Value("${app.upload.dir:uploads}") String uploadDir) {
-        this.uploadDirectory = Paths.get(uploadDir).toAbsolutePath().normalize();
+    public FileStorageService(String uploadDir) {
+        this.uploadDirectory = Paths.get(uploadDir != null && !uploadDir.isBlank() ? uploadDir : "uploads").toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.uploadDirectory);
             log.info("Initialized file upload directory at: {}", this.uploadDirectory);
         } catch (IOException ex) {
             throw new RuntimeException("Could not create the upload directory at " + this.uploadDirectory, ex);
         }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public FileStorageService(AppProperties appProperties) {
+        this((appProperties != null && appProperties.upload() != null)
+                ? appProperties.upload().getEffectiveDir()
+                : "uploads");
     }
 
     /**

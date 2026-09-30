@@ -1,14 +1,18 @@
 package com.agent.reconciliation.service;
 
 import com.agent.reconciliation.domain.dto.AuditDetailResponse;
+import com.agent.reconciliation.domain.dto.BilledLineItemResponse;
 import com.agent.reconciliation.domain.dto.ExtractedInvoice;
 import com.agent.reconciliation.domain.dto.ExtractedLineItem;
 import com.agent.reconciliation.domain.dto.ReconciliationSummaryResponse;
 import com.agent.reconciliation.domain.entity.*;
 import com.agent.reconciliation.repository.InvoiceRepository;
 import com.agent.reconciliation.repository.PurchaseOrderRepository;
+import com.agent.reconciliation.util.DisputeReasonHelper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,28 +32,62 @@ public class ReconciliationEngineService {
     private final PurchaseOrderRepository purchaseOrderRepository;
     private final InvoiceRepository invoiceRepository;
     private final DisputeDraftingService disputeDraftingService;
+    private final ObjectMapper objectMapper;
 
     public ReconciliationEngineService(PurchaseOrderRepository purchaseOrderRepository,
                                        InvoiceRepository invoiceRepository,
                                        DisputeDraftingService disputeDraftingService) {
+        this(purchaseOrderRepository, invoiceRepository, disputeDraftingService, new ObjectMapper());
+    }
+
+    @Autowired
+    public ReconciliationEngineService(PurchaseOrderRepository purchaseOrderRepository,
+                                       InvoiceRepository invoiceRepository,
+                                       DisputeDraftingService disputeDraftingService,
+                                       ObjectMapper objectMapper) {
         this.purchaseOrderRepository = purchaseOrderRepository;
         this.invoiceRepository = invoiceRepository;
         this.disputeDraftingService = disputeDraftingService;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
     /**
      * Executes deterministic audit and reconciliation on the extracted invoice.
+     * Network calls to Gemini are isolated outside of the database transaction.
      *
      * @param extracted structured invoice DTO extracted from document
      * @param filePath stored local path of the invoice file
      * @param rawJsonPayload serialized JSON payload from extraction
      * @return persisted Invoice entity with audits and dispute draft
      */
-    @Transactional
     public Invoice reconcile(ExtractedInvoice extracted, String filePath, String rawJsonPayload) {
         log.info("Starting deterministic reconciliation for invoice: {}, PO Ref: {}",
                 extracted.invoiceNumber(), extracted.poReference());
 
+        // 1. Transactional DB audit & initial save (releases DB connection immediately)
+        Invoice invoice = performAuditAndPersist(extracted, filePath, rawJsonPayload);
+
+        // 2. Non-transactional external network I/O to Gemini AI (prevents DB connection pool starvation)
+        if (invoice.getReconciliationStatus() == ReconciliationStatus.FLAGGED_DISCREPANCY) {
+            PurchaseOrder po = null;
+            if (invoice.getPoReference() != null && !invoice.getPoReference().isBlank()) {
+                po = purchaseOrderRepository.findByPoNumber(invoice.getPoReference().trim()).orElse(null);
+            }
+            log.info("Generating AI dispute draft outside of database transaction for invoice: {}", invoice.getInvoiceNumber());
+            String disputeDraft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
+
+            // 3. Short transactional update
+            return saveDisputeDraft(invoice, disputeDraft);
+        }
+
+        return invoice;
+    }
+
+    /**
+     * Isolated transactional method executing deterministic business logic and audit persistence.
+     */
+    @Transactional
+    public Invoice performAuditAndPersist(ExtractedInvoice extracted, String filePath, String rawJsonPayload) {
         Invoice invoice = Invoice.builder()
                 .invoiceNumber(extracted.invoiceNumber() != null ? extracted.invoiceNumber() : "UNKNOWN")
                 .poReference(extracted.poReference())
@@ -75,8 +113,8 @@ public class ReconciliationEngineService {
                     .itemDescription("Purchase Order: " + (poRef.isEmpty() ? "MISSING" : poRef))
                     .expectedValue(null)
                     .actualValue(extracted.grandTotal() != null ? extracted.grandTotal() : BigDecimal.ZERO)
-                    .explanation("Purchase Order " + (poRef.isEmpty() ? "reference was missing on document" : "'" + poRef + "' was not found in the system") + ". Manual auditor review required.")
                     .build();
+            audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
             invoice.addAudit(audit);
             return invoiceRepository.save(invoice);
@@ -101,9 +139,8 @@ public class ReconciliationEngineService {
                             .expectedValue(null)
                             .actualValue(item.lineTotal() != null ? item.lineTotal() :
                                     (item.unitPrice() != null && item.quantity() != null ? item.unitPrice().multiply(item.quantity()) : BigDecimal.ZERO))
-                            .explanation(String.format("Invoiced item '%s' does not match any approved line item in PO %s",
-                                    item.vendorItemDescription(), po.getPoNumber()))
                             .build();
+                    audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
                     invoice.addAudit(audit);
                 } else {
@@ -113,20 +150,16 @@ public class ReconciliationEngineService {
                     // Price Check
                     if (item.unitPrice() != null && poItem.getAgreedUnitPrice() != null
                             && item.unitPrice().compareTo(poItem.getAgreedUnitPrice()) != 0) {
-                        BigDecimal variance = item.unitPrice().subtract(poItem.getAgreedUnitPrice());
                         log.info("Price mismatch for {}: agreed={}, billed={}", poItem.getSkuCode(), poItem.getAgreedUnitPrice(), item.unitPrice());
 
-                        String sign = variance.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
                         ReconciliationAudit audit = ReconciliationAudit.builder()
                                 .issueType(IssueType.PRICE_MISMATCH)
                                 .skuCode(poItem.getSkuCode())
                                 .itemDescription(item.vendorItemDescription())
                                 .expectedValue(poItem.getAgreedUnitPrice())
                                 .actualValue(item.unitPrice())
-                                .explanation(String.format("Price mismatch for %s: agreed unit price is %s EGP, but invoiced at %s EGP (variance: %s%s EGP)",
-                                        poItem.getSkuCode(), poItem.getAgreedUnitPrice().toPlainString(),
-                                        item.unitPrice().toPlainString(), sign, variance.toPlainString()))
                                 .build();
+                        audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
                         invoice.addAudit(audit);
                     }
@@ -134,20 +167,16 @@ public class ReconciliationEngineService {
                     // Quantity Check
                     if (item.quantity() != null && poItem.getExpectedQuantity() != null
                             && item.quantity().compareTo(poItem.getExpectedQuantity()) != 0) {
-                        BigDecimal qtyVariance = item.quantity().subtract(poItem.getExpectedQuantity());
                         log.info("Quantity mismatch for {}: expected={}, billed={}", poItem.getSkuCode(), poItem.getExpectedQuantity(), item.quantity());
 
-                        String qtySign = qtyVariance.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
                         ReconciliationAudit audit = ReconciliationAudit.builder()
                                 .issueType(IssueType.QUANTITY_MISMATCH)
                                 .skuCode(poItem.getSkuCode())
                                 .itemDescription(item.vendorItemDescription())
                                 .expectedValue(poItem.getExpectedQuantity())
                                 .actualValue(item.quantity())
-                                .explanation(String.format("Quantity mismatch for %s: expected ordered quantity is %s, but invoiced for %s (variance: %s%s)",
-                                        poItem.getSkuCode(), poItem.getExpectedQuantity().toPlainString(),
-                                        item.quantity().toPlainString(), qtySign, qtyVariance.toPlainString()))
                                 .build();
+                        audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
                         invoice.addAudit(audit);
                     }
@@ -164,9 +193,8 @@ public class ReconciliationEngineService {
                     .itemDescription("Unapproved Surcharge / Delivery Fee (مشال / توصيل)")
                     .expectedValue(BigDecimal.ZERO.setScale(2))
                     .actualValue(extracted.extraFees())
-                    .explanation(String.format("Unapproved extra fee or freight surcharge of %s EGP billed on invoice, not authorized in PO %s",
-                            extracted.extraFees().toPlainString(), po.getPoNumber()))
                     .build();
+            audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
             invoice.addAudit(audit);
         }
@@ -176,15 +204,31 @@ public class ReconciliationEngineService {
             log.info("Invoice {} reconciled with ZERO discrepancies. Status: APPROVED.", invoice.getInvoiceNumber());
             invoice.setReconciliationStatus(ReconciliationStatus.APPROVED);
         } else {
-            log.info("Invoice {} has {} discrepancies. Status: FLAGGED_DISCREPANCY. Drafting dispute notice...",
+            log.info("Invoice {} has {} discrepancies. Status: FLAGGED_DISCREPANCY.",
                     invoice.getInvoiceNumber(), invoice.getAudits().size());
             invoice.setReconciliationStatus(ReconciliationStatus.FLAGGED_DISCREPANCY);
-
-            String disputeDraft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
-            invoice.setDisputeDraft(disputeDraft);
         }
 
         return invoiceRepository.save(invoice);
+    }
+
+    /**
+     * Isolated transactional method updating the dispute draft on the invoice.
+     */
+    @Transactional
+    public Invoice saveDisputeDraft(Invoice invoice, String disputeDraft) {
+        invoice.setDisputeDraft(disputeDraft);
+        return invoiceRepository.save(invoice);
+    }
+
+    /**
+     * Isolated transactional method updating the dispute draft on the invoice by ID.
+     */
+    @Transactional
+    public Invoice updateDisputeDraft(Long invoiceId, String disputeDraft) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new IllegalArgumentException("Invoice not found with id: " + invoiceId));
+        return saveDisputeDraft(invoice, disputeDraft);
     }
 
     /**
@@ -256,10 +300,12 @@ public class ReconciliationEngineService {
      */
     public ReconciliationSummaryResponse toSummaryResponse(Invoice invoice) {
         BigDecimal expectedTotal = BigDecimal.ZERO;
+        PurchaseOrder po = null;
         if (invoice.getPoReference() != null && !invoice.getPoReference().isBlank()) {
             Optional<PurchaseOrder> poOpt = purchaseOrderRepository.findByPoNumber(invoice.getPoReference().trim());
             if (poOpt.isPresent()) {
-                expectedTotal = poOpt.get().getTotalExpectedAmount();
+                po = poOpt.get();
+                expectedTotal = po.getTotalExpectedAmount();
             }
         }
 
@@ -272,10 +318,22 @@ public class ReconciliationEngineService {
                         a.getItemDescription(),
                         a.getExpectedValue(),
                         a.getActualValue(),
-                        a.getExplanation()
+                        a.getExplanation(),
+                        DisputeReasonHelper.getArabicReason(a),
+                        DisputeReasonHelper.getEnglishReason(a)
                 ))
                 .toList()
                 : Collections.emptyList();
+
+        List<BilledLineItemResponse> billedItems = buildBilledLineItems(invoice);
+
+        String fullDraft = invoice.getDisputeDraft();
+        String arDraft = (fullDraft != null && !fullDraft.isBlank())
+                ? disputeDraftingService.extractOrGenerateArabic(fullDraft, invoice, po, invoice.getAudits())
+                : null;
+        String enDraft = (fullDraft != null && !fullDraft.isBlank())
+                ? disputeDraftingService.extractOrGenerateEnglish(fullDraft, invoice, po, invoice.getAudits())
+                : null;
 
         return new ReconciliationSummaryResponse(
                 invoice.getId(),
@@ -287,8 +345,90 @@ public class ReconciliationEngineService {
                 expectedTotal,
                 invoice.getAudits() != null ? invoice.getAudits().size() : 0,
                 auditResponses,
-                invoice.getDisputeDraft(),
+                billedItems,
+                fullDraft,
+                arDraft,
+                enDraft,
                 "/api/invoices/" + invoice.getId() + "/file"
         );
+    }
+
+    private List<BilledLineItemResponse> buildBilledLineItems(Invoice invoice) {
+        if (invoice.getRawJsonPayload() == null || invoice.getRawJsonPayload().isBlank()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            ExtractedInvoice extracted = objectMapper.readValue(invoice.getRawJsonPayload(), ExtractedInvoice.class);
+            List<BilledLineItemResponse> items = new ArrayList<>();
+            List<ReconciliationAudit> audits = invoice.getAudits() != null ? invoice.getAudits() : Collections.emptyList();
+
+            if (extracted.items() != null) {
+                for (ExtractedLineItem item : extracted.items()) {
+                    // Check if this item correlates with an audit finding
+                    Optional<ReconciliationAudit> auditOpt = audits.stream()
+                            .filter(a -> (a.getSkuCode() != null && item.suggestedSku() != null && a.getSkuCode().equalsIgnoreCase(item.suggestedSku()))
+                                    || (a.getItemDescription() != null && item.vendorItemDescription() != null && a.getItemDescription().equalsIgnoreCase(item.vendorItemDescription())))
+                            .findFirst();
+
+                    if (auditOpt.isPresent()) {
+                        ReconciliationAudit audit = auditOpt.get();
+                        String statusLabel = switch (audit.getIssueType()) {
+                            case PRICE_MISMATCH -> "Price Variance";
+                            case QUANTITY_MISMATCH -> "Quantity Variance";
+                            case UNRECOGNIZED_ITEM -> "Unrecognized Item";
+                            case PO_NOT_FOUND -> "PO Reference Missing";
+                            case EXTRA_FEE -> "Extra Surcharge";
+                        };
+                        items.add(new BilledLineItemResponse(
+                                item.vendorItemDescription(),
+                                item.suggestedSku(),
+                                item.quantity(),
+                                item.unitPrice(),
+                                item.lineTotal(),
+                                audit.getIssueType().name(),
+                                statusLabel,
+                                audit.getExplanation()
+                        ));
+                    } else {
+                        // 100% matched PO terms with zero discrepancies
+                        items.add(new BilledLineItemResponse(
+                                item.vendorItemDescription(),
+                                item.suggestedSku(),
+                                item.quantity(),
+                                item.unitPrice(),
+                                item.lineTotal(),
+                                "MATCHED",
+                                "100% Matched PO Terms",
+                                "Billed unit price and quantity fully reconcile with purchase order terms."
+                        ));
+                    }
+                }
+            }
+
+            // If there's an extra fee / freight delivery charge, also include it as a distinct billed line item!
+            if (extracted.extraFees() != null && extracted.extraFees().compareTo(BigDecimal.ZERO) > 0) {
+                Optional<ReconciliationAudit> extraFeeAudit = audits.stream()
+                        .filter(a -> a.getIssueType() == IssueType.EXTRA_FEE)
+                        .findFirst();
+
+                items.add(new BilledLineItemResponse(
+                        "Express Freight & Logistics Surcharge (مشال / توصيل)",
+                        "SURCHARGE",
+                        BigDecimal.ONE,
+                        extracted.extraFees(),
+                        extracted.extraFees(),
+                        "EXTRA_FEE",
+                        "Unapproved Surcharge",
+                        extraFeeAudit.map(ReconciliationAudit::getExplanation)
+                                .orElse("Unapproved delivery/freight surcharge billed on invoice without authorization in PO.")
+                ));
+            }
+
+            return items;
+        } catch (Exception ex) {
+            log.warn("Failed to deserialize rawJsonPayload for invoice {}: {}", invoice.getId(), ex.getMessage());
+            return Collections.emptyList();
+        }
     }
 }

@@ -10,7 +10,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
+import com.agent.reconciliation.config.AppProperties;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+
 @SpringBootApplication
+@EnableConfigurationProperties(AppProperties.class)
 public class AutomatedInvoiceReconciliationApplication {
 
     private static final Logger log = LoggerFactory.getLogger(AutomatedInvoiceReconciliationApplication.class);

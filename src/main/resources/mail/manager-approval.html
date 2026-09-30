@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; margin: 0; padding: 24px; color: #1e293b; }
+    .container { max-width: 720px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+    .header { background: linear-gradient(135deg, #065f46 0%, #059669 100%); color: #ffffff; padding: 26px 24px; }
+    .header h1 { margin: 0 0 6px 0; font-size: 21px; font-weight: 800; }
+    .header p { margin: 0; font-size: 13px; opacity: 0.92; }
+    .body-content { padding: 24px; }
+    .meta-grid { display: table; width: 100%; margin-bottom: 20px; background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .meta-col { display: table-cell; width: 50%; vertical-align: top; font-size: 13px; line-height: 1.8; }
+    .badge-success { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 700; background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .signoff-box { background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; font-size: 13px; color: #166534; margin-top: 20px; line-height: 1.7; }
+    .footer { background: #f8fafc; padding: 18px 24px; text-align: center; font-size: 12px; color: #64748b; border-top: 1px solid #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>PAYMENT RELEASE AUTHORIZATION &amp; SIGN-OFF</h1>
+      <p>اعتماد صرف مستحقات الفاتورة وإخلاء المسؤولية &bull; Financial Governance &amp; Treasury</p>
+    </div>
+    <div class="body-content">
+      <p style="font-size: 14px;">Dear Finance Management Team / السادة الإدارة المالية المحترمون،</p>
+      <p style="font-size: 13px; line-height: 1.7; color: #334155;">
+        Invoice <strong>{{invoiceNumber}}</strong> from supplier <strong>{{vendorName}}</strong> has been reviewed and formally <strong>APPROVED</strong> for payment release against <strong>Purchase Order {{poReference}}</strong>.
+      </p>
+      
+      <div class="meta-grid">
+        <div class="meta-col">
+          <div><strong>Invoice Number:</strong> {{invoiceNumber}}</div>
+          <div><strong>PO Reference:</strong> {{poReference}}</div>
+          <div><strong>Vendor:</strong> {{vendorName}}</div>
+          <div><strong>Status:</strong> <span class="badge-success">APPROVED FOR DISBURSEMENT</span></div>
+        </div>
+        <div class="meta-col" style="text-align: right;">
+          <div><strong>Disbursement Amount:</strong> <span style="color: #059669; font-weight: 800; font-size: 16px;">{{invoicedTotal}} EGP</span></div>
+          <div><strong>Expected PO Total:</strong> {{expectedTotal}} EGP</div>
+          <div><strong>Authorization Time:</strong> {{authorizationTime}}</div>
+        </div>
+      </div>
+
+      {{notesBlock}}
+
+      {{auditTableSection}}
+
+      <div class="signoff-box">
+        <strong>Payment Responsibility &amp; Accountability Record (إقرار اعتماد المسؤولية المالية):</strong><br/>
+        By virtue of this manual sign-off, the approving financial authority confirms acceptance of all line items, delivery quantities, and agreed overrides as authorized business expenditure. The treasury accounting system is authorized to process disbursement.
+      </div>
+    </div>
+    <div class="footer">
+      Automated Financial Audit Trail &bull; Audit Id: INV-{{invoiceId}} &bull; Timestamp: {{auditTimestamp}}
+    </div>
+  </div>
+</body>
+</html>

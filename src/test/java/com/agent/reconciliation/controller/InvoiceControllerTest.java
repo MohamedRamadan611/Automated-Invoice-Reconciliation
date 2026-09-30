@@ -50,6 +50,15 @@ class InvoiceControllerTest {
     @MockBean
     private ReconciliationEngineService reconciliationEngineService;
 
+    @MockBean
+    private com.agent.reconciliation.service.EmailNotificationService emailNotificationService;
+
+    @MockBean
+    private com.agent.reconciliation.service.DisputeDraftingService disputeDraftingService;
+
+    @MockBean
+    private com.agent.reconciliation.repository.PurchaseOrderRepository purchaseOrderRepository;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -192,9 +201,74 @@ class InvoiceControllerTest {
         when(invoiceRepository.findWithAuditsById(1L)).thenReturn(Optional.of(invoice1));
         when(invoiceRepository.save(any())).thenReturn(invoice1);
         when(reconciliationEngineService.toSummaryResponse(invoice1)).thenReturn(approvedSummary);
+        when(emailNotificationService.sendApprovalEmailToManager(any(), any(), any()))
+                .thenReturn(new com.agent.reconciliation.service.EmailNotificationService.EmailDispatchResult(true, true, "manager@test.com", "Simulated"));
 
-        mockMvc.perform(post("/api/invoices/1/approve"))
+        mockMvc.perform(post("/api/invoices/1/approve")
+                        .param("email", "manager@test.com")
+                        .param("notes", "Price variance accepted by finance head"))
                 .andExpect(status().isOk())
+                .andExpect(header().string("X-Email-Dispatched", "true"))
+                .andExpect(header().string("X-Email-Recipient", "manager@test.com"))
                 .andExpect(jsonPath("$.reconciliationStatus").value("APPROVED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/invoices/{id}/reject should mark status REJECTED and dispatch dispute email")
+    void shouldRejectInvoice() throws Exception {
+        Invoice invoice1 = Invoice.builder()
+                .id(1L)
+                .invoiceNumber("INV-101")
+                .vendorName("Al-Wadi Farms")
+                .reconciliationStatus(ReconciliationStatus.FLAGGED_DISCREPANCY)
+                .build();
+
+        ReconciliationSummaryResponse rejectedSummary = new ReconciliationSummaryResponse(
+                1L, "INV-101", "PO-2026-001", "Al-Wadi Farms",
+                "REJECTED", new BigDecimal("3200.00"), new BigDecimal("2750.00"),
+                2, Collections.emptyList(), "Dispute letter draft", "/api/invoices/1/file"
+        );
+
+        when(invoiceRepository.findWithAuditsById(1L)).thenReturn(Optional.of(invoice1));
+        when(invoiceRepository.save(any())).thenReturn(invoice1);
+        when(reconciliationEngineService.toSummaryResponse(invoice1)).thenReturn(rejectedSummary);
+        when(emailNotificationService.sendDisputeEmailToVendor(any(), any(), any()))
+                .thenReturn(new com.agent.reconciliation.service.EmailNotificationService.EmailDispatchResult(true, true, "vendor@test.com", "Simulated"));
+
+        mockMvc.perform(post("/api/invoices/1/reject")
+                        .param("email", "vendor@test.com")
+                        .param("lang", "BOTH"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Email-Dispatched", "true"))
+                .andExpect(header().string("X-Email-Recipient", "vendor@test.com"))
+                .andExpect(jsonPath("$.reconciliationStatus").value("REJECTED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/invoices/{id}/generate-dispute should regenerate and persist dispute draft")
+    void shouldGenerateDisputeDraft() throws Exception {
+        Invoice invoice1 = Invoice.builder()
+                .id(1L)
+                .invoiceNumber("INV-101")
+                .poReference("PO-2026-001")
+                .vendorName("Al-Wadi Farms")
+                .reconciliationStatus(ReconciliationStatus.FLAGGED_DISCREPANCY)
+                .build();
+
+        ReconciliationSummaryResponse regeneratedSummary = new ReconciliationSummaryResponse(
+                1L, "INV-101", "PO-2026-001", "Al-Wadi Farms",
+                "FLAGGED_DISCREPANCY", new BigDecimal("3200.00"), new BigDecimal("2750.00"),
+                2, Collections.emptyList(), "New AI Dispute Draft", "/api/invoices/1/file"
+        );
+
+        when(invoiceRepository.findWithAuditsById(1L)).thenReturn(Optional.of(invoice1));
+        when(purchaseOrderRepository.findByPoNumber("PO-2026-001")).thenReturn(Optional.empty());
+        when(disputeDraftingService.generateDisputeDraft(any(), any(), any())).thenReturn("New AI Dispute Draft");
+        when(invoiceRepository.save(any())).thenReturn(invoice1);
+        when(reconciliationEngineService.toSummaryResponse(invoice1)).thenReturn(regeneratedSummary);
+
+        mockMvc.perform(post("/api/invoices/1/generate-dispute"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.disputeDraft").value("New AI Dispute Draft"));
     }
 }
