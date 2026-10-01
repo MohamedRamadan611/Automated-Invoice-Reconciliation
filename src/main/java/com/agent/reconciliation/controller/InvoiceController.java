@@ -253,16 +253,29 @@ public class InvoiceController {
 
         try {
             log.info("Generating dynamic Gemini AI dispute draft for invoice ID: {} (Vendor: {})", id, invoice.getVendorName());
-            String generatedDraft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
-            invoice.setDisputeDraft(generatedDraft);
+            var draftResult = disputeDraftingService.generateDisputeDraftResult(invoice, po, invoice.getAudits());
+            if (draftResult != null) {
+                invoice.setDisputeDraft(draftResult.fullDraft());
+                invoice.setDisputeDraftArabic(draftResult.arabicDraft());
+                invoice.setDisputeDraftEnglish(draftResult.englishDraft());
+            } else {
+                String draft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
+                invoice.setDisputeDraft(draft);
+            }
             Invoice saved = invoiceRepository.save(invoice);
-            log.info("Persisted regenerated dispute draft for invoice ID: {}", id);
+            log.info("Persisted regenerated dispute drafts for invoice ID: {}", id);
 
             return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
         } catch (Throwable ex) {
             log.error("Error generating dispute draft for invoice {}: {}. Applying fallback template.", id, ex.getMessage());
-            String fallbackDraft = disputeDraftingService.generateFallbackDisputeTemplate(invoice, po, invoice.getAudits());
-            invoice.setDisputeDraft(fallbackDraft);
+            var fallbackResult = disputeDraftingService.generateFallbackDisputeResult(invoice, po, invoice.getAudits());
+            if (fallbackResult != null) {
+                invoice.setDisputeDraft(fallbackResult.fullDraft());
+                invoice.setDisputeDraftArabic(fallbackResult.arabicDraft());
+                invoice.setDisputeDraftEnglish(fallbackResult.englishDraft());
+            } else {
+                invoice.setDisputeDraft(disputeDraftingService.generateFallbackDisputeTemplate(invoice, po, invoice.getAudits()));
+            }
             Invoice saved = invoiceRepository.save(invoice);
             return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
         }

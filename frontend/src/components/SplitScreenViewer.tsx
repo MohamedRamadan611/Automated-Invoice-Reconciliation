@@ -472,32 +472,22 @@ export default function SplitScreenViewer({
                           {/* Dual-Language Separated Audit Findings */}
                           <div className="p-3.5 bg-rose-50/70 rounded-xl border border-rose-200/80 text-xs space-y-2.5">
                             {/* Arabic Row */}
-                            <div className="flex items-start gap-2 text-rose-950" dir="rtl">
-                              <span className="shrink-0 px-2 py-0.5 text-[10px] font-bold bg-rose-200/80 text-rose-900 rounded-md">
-                                🇪🇬 بالعربية
-                              </span>
-                              <span className="font-medium leading-relaxed text-right flex-1">
-                                {audit.explanationArabic ||
-                                  (audit.explanation.includes(" — ")
-                                    ? audit.explanation.split(" — ")[0].trim()
-                                    : audit.explanation)}
-                              </span>
+                            <div className="text-rose-950 font-medium leading-relaxed text-right" dir="rtl">
+                              {audit.explanationArabic ||
+                                (audit.explanation.includes(" — ")
+                                  ? audit.explanation.split(" — ")[0].trim()
+                                  : audit.explanation)}
                             </div>
 
                             {/* Separator Line */}
                             <div className="border-t border-rose-200/60" />
 
                             {/* English Row */}
-                            <div className="flex items-start gap-2 text-rose-900" dir="ltr">
-                              <span className="shrink-0 px-2 py-0.5 text-[10px] font-bold bg-rose-200/80 text-rose-900 rounded-md">
-                                🇬🇧 In English
-                              </span>
-                              <span className="font-normal leading-relaxed text-left flex-1">
-                                {audit.explanationEnglish ||
-                                  (audit.explanation.includes(" — ")
-                                    ? audit.explanation.split(" — ").slice(1).join(" — ").trim()
-                                    : audit.explanation)}
-                              </span>
+                            <div className="text-rose-900 font-normal leading-relaxed text-left" dir="ltr">
+                              {audit.explanationEnglish ||
+                                (audit.explanation.includes(" — ")
+                                  ? audit.explanation.split(" — ").slice(1).join(" — ").trim()
+                                  : audit.explanation)}
                             </div>
                           </div>
                         </div>

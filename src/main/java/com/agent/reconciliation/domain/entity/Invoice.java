@@ -51,6 +51,14 @@ public class Invoice {
     private String disputeDraft;
 
     @Lob
+    @Column(name = "dispute_draft_arabic", columnDefinition = "TEXT")
+    private String disputeDraftArabic;
+
+    @Lob
+    @Column(name = "dispute_draft_english", columnDefinition = "TEXT")
+    private String disputeDraftEnglish;
+
+    @Lob
     @Column(name = "raw_json_payload", columnDefinition = "LONGTEXT")
     private String rawJsonPayload;
 

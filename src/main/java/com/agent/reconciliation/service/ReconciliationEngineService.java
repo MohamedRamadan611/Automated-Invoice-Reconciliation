@@ -7,6 +7,7 @@ import com.agent.reconciliation.domain.dto.ExtractedLineItem;
 import com.agent.reconciliation.domain.dto.ReconciliationSummaryResponse;
 import com.agent.reconciliation.domain.entity.*;
 import com.agent.reconciliation.repository.InvoiceRepository;
+import com.agent.reconciliation.repository.PurchaseOrderItemRepository;
 import com.agent.reconciliation.repository.PurchaseOrderRepository;
 import com.agent.reconciliation.util.DisputeReasonHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +24,7 @@ import java.util.*;
  * Deterministic Java Reconciliation Engine.
  * Executes 100% of mathematical validations, line-item matching, tolerance checks,
  * and status resolutions in pure Java logic (zero LLM math).
+ * Completely generic across all industries; zero hardcoded commodities.
  */
 @Service
 public class ReconciliationEngineService {
@@ -30,6 +32,7 @@ public class ReconciliationEngineService {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationEngineService.class);
 
     private final PurchaseOrderRepository purchaseOrderRepository;
+    private final PurchaseOrderItemRepository purchaseOrderItemRepository;
     private final InvoiceRepository invoiceRepository;
     private final DisputeDraftingService disputeDraftingService;
     private final ObjectMapper objectMapper;
@@ -37,15 +40,24 @@ public class ReconciliationEngineService {
     public ReconciliationEngineService(PurchaseOrderRepository purchaseOrderRepository,
                                        InvoiceRepository invoiceRepository,
                                        DisputeDraftingService disputeDraftingService) {
-        this(purchaseOrderRepository, invoiceRepository, disputeDraftingService, new ObjectMapper());
+        this(purchaseOrderRepository, null, invoiceRepository, disputeDraftingService, new ObjectMapper());
+    }
+
+    public ReconciliationEngineService(PurchaseOrderRepository purchaseOrderRepository,
+                                       PurchaseOrderItemRepository purchaseOrderItemRepository,
+                                       InvoiceRepository invoiceRepository,
+                                       DisputeDraftingService disputeDraftingService) {
+        this(purchaseOrderRepository, purchaseOrderItemRepository, invoiceRepository, disputeDraftingService, new ObjectMapper());
     }
 
     @Autowired
     public ReconciliationEngineService(PurchaseOrderRepository purchaseOrderRepository,
+                                       PurchaseOrderItemRepository purchaseOrderItemRepository,
                                        InvoiceRepository invoiceRepository,
                                        DisputeDraftingService disputeDraftingService,
                                        ObjectMapper objectMapper) {
         this.purchaseOrderRepository = purchaseOrderRepository;
+        this.purchaseOrderItemRepository = purchaseOrderItemRepository;
         this.invoiceRepository = invoiceRepository;
         this.disputeDraftingService = disputeDraftingService;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
@@ -74,10 +86,15 @@ public class ReconciliationEngineService {
                 po = purchaseOrderRepository.findByPoNumber(invoice.getPoReference().trim()).orElse(null);
             }
             log.info("Generating AI dispute draft outside of database transaction for invoice: {}", invoice.getInvoiceNumber());
-            String disputeDraft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
+            var disputeResult = disputeDraftingService.generateDisputeDraftResult(invoice, po, invoice.getAudits());
 
             // 3. Short transactional update
-            return saveDisputeDraft(invoice, disputeDraft);
+            if (disputeResult != null) {
+                return saveDisputeDraft(invoice, disputeResult.fullDraft(), disputeResult.arabicDraft(), disputeResult.englishDraft());
+            } else {
+                String draft = disputeDraftingService.generateDisputeDraft(invoice, po, invoice.getAudits());
+                return saveDisputeDraft(invoice, draft != null ? draft : "");
+            }
         }
 
         return invoice;
@@ -130,8 +147,16 @@ public class ReconciliationEngineService {
                 Optional<PurchaseOrderItem> matchedPoItem = findMatchingPoItem(item, poItems, matchedPoItemIds);
 
                 if (matchedPoItem.isEmpty()) {
-                    // Unrecognized item
-                    log.info("Item '{}' did not match any item in PO {}", item.vendorItemDescription(), po.getPoNumber());
+                    // Check if SKU exists anywhere in enterprise catalog
+                    String sku = item.suggestedSku() != null ? item.suggestedSku().trim() : null;
+                    if (sku != null && purchaseOrderItemRepository != null) {
+                        purchaseOrderItemRepository.findFirstBySkuCodeIgnoreCase(sku).ifPresent(catalogItem ->
+                                log.info("SKU '{}' recognized in enterprise database ({}) but unapproved for PO {}",
+                                        sku, catalogItem.getDescription(), po.getPoNumber())
+                        );
+                    }
+
+                    log.info("Item '{}' did not match any approved line in PO {}", item.vendorItemDescription(), po.getPoNumber());
                     ReconciliationAudit audit = ReconciliationAudit.builder()
                             .issueType(IssueType.UNRECOGNIZED_ITEM)
                             .skuCode(item.suggestedSku())
@@ -216,9 +241,20 @@ public class ReconciliationEngineService {
      * Isolated transactional method updating the dispute draft on the invoice.
      */
     @Transactional
-    public Invoice saveDisputeDraft(Invoice invoice, String disputeDraft) {
+    public Invoice saveDisputeDraft(Invoice invoice, String disputeDraft, String disputeDraftArabic, String disputeDraftEnglish) {
         invoice.setDisputeDraft(disputeDraft);
+        invoice.setDisputeDraftArabic(disputeDraftArabic);
+        invoice.setDisputeDraftEnglish(disputeDraftEnglish);
         return invoiceRepository.save(invoice);
+    }
+
+    @Transactional
+    public Invoice saveDisputeDraft(Invoice invoice, String disputeDraft) {
+        var parsed = disputeDraftingService != null ? disputeDraftingService.parseDisputeSections(disputeDraft, invoice, null, invoice.getAudits()) : null;
+        if (parsed != null) {
+            return saveDisputeDraft(invoice, parsed.fullDraft(), parsed.arabicDraft(), parsed.englishDraft());
+        }
+        return saveDisputeDraft(invoice, disputeDraft, null, null);
     }
 
     /**
@@ -232,7 +268,7 @@ public class ReconciliationEngineService {
     }
 
     /**
-     * Matches an extracted line item to the appropriate PO item by SKU code or description similarity.
+     * Matches an extracted line item to the appropriate PO item by SKU code or generic description similarity.
      */
     private Optional<PurchaseOrderItem> findMatchingPoItem(ExtractedLineItem item,
                                                            List<PurchaseOrderItem> poItems,
@@ -251,18 +287,17 @@ public class ReconciliationEngineService {
             }
         }
 
-        // 2. Keyword & Description Semantic Matching
-        String desc = item.vendorItemDescription() != null ? item.vendorItemDescription().toLowerCase() : "";
+        // 2. Generic Token & Semantic Description Matching (Industry Agnostic)
+        String desc = item.vendorItemDescription() != null ? item.vendorItemDescription() : "";
 
         for (PurchaseOrderItem poItem : poItems) {
             if (alreadyMatchedIds.contains(poItem.getId())) {
                 continue;
             }
-            String poDesc = poItem.getDescription().toLowerCase();
-            String poSku = poItem.getSkuCode().toLowerCase();
+            String poDesc = poItem.getDescription();
+            String poSku = poItem.getSkuCode();
 
-            // Match by commodity keywords (Arabic and English)
-            if (isSameCommodity(desc, poDesc, poSku)) {
+            if (isGenericDescriptionMatch(desc, poDesc, poSku)) {
                 return Optional.of(poItem);
             }
         }
@@ -270,29 +305,68 @@ public class ReconciliationEngineService {
         return Optional.empty();
     }
 
-    private boolean isSameCommodity(String desc, String poDesc, String poSku) {
-        // Tomatoes
-        if ((desc.contains("طماطم") || desc.contains("tomato")) && (poDesc.contains("tomato") || poSku.contains("tomato"))) {
+    /**
+     * Generic, industry-agnostic matcher between an invoiced item description and PO specifications.
+     * Evaluates substring containment, normalized token overlap, and SKU token presence.
+     */
+    private boolean isGenericDescriptionMatch(String invoicedDesc, String poDesc, String poSku) {
+        if (invoicedDesc == null || invoicedDesc.isBlank() || poDesc == null || poDesc.isBlank()) {
+            return false;
+        }
+
+        String normInv = invoicedDesc.trim().toLowerCase();
+        String normPo = poDesc.trim().toLowerCase();
+
+        // 1. Direct or Substring Containment
+        if (normPo.contains(normInv) || normInv.contains(normPo)) {
             return true;
         }
-        // Onions
-        if ((desc.contains("بصل") || desc.contains("onion")) && (poDesc.contains("onion") || poSku.contains("onion"))) {
+
+        // 2. Token overlap matching (generic across languages, commodities, industrial parts)
+        Set<String> invTokens = tokenize(normInv);
+        Set<String> poTokens = tokenize(normPo);
+
+        if (invTokens.isEmpty() || poTokens.isEmpty()) {
+            return false;
+        }
+
+        long overlapCount = invTokens.stream().filter(poTokens::contains).count();
+        if (overlapCount >= 2) {
             return true;
         }
-        // Potatoes
-        if ((desc.contains("بطاطس") || desc.contains("potato")) && (poDesc.contains("potato") || poSku.contains("potato"))) {
+        if (overlapCount == 1 && (invTokens.size() <= 2 || poTokens.size() <= 2)) {
             return true;
         }
-        // Cheese
-        if ((desc.contains("جبن") || desc.contains("cheese")) && (poDesc.contains("cheese") || poSku.contains("cheese"))) {
-            return true;
+
+        // 3. SKU token containment (e.g. if SKU code appears in description)
+        if (poSku != null && !poSku.isBlank()) {
+            String cleanSku = poSku.toLowerCase().replace("-", " ").replace("_", " ");
+            for (String part : cleanSku.split("\\s+")) {
+                if (part.length() > 2 && normInv.contains(part)) {
+                    return true;
+                }
+            }
         }
-        // Butter
-        if ((desc.contains("زبد") || desc.contains("butter")) && (poDesc.contains("butter") || poSku.contains("butter"))) {
-            return true;
+
+        return false;
+    }
+
+    private Set<String> tokenize(String input) {
+        String cleaned = input.replaceAll("[\\p{Punct}&&[^-]]", " ")
+                .replaceAll("[\\u064B-\\u065F]", "")
+                .trim();
+        String[] words = cleaned.split("\\s+");
+        Set<String> tokens = new HashSet<>();
+        Set<String> stopWords = Set.of(
+                "of", "the", "and", "for", "with", "in", "to", "grade", "premium", "fresh",
+                "من", "في", "على", "و", "أو", "درجة", "أولى", "طازج", "بلدي", "فاخر", "كجم", "طن"
+        );
+        for (String w : words) {
+            if (w.length() >= 2 && !stopWords.contains(w)) {
+                tokens.add(w);
+            }
         }
-        // Substring containment
-        return poDesc.contains(desc) || desc.contains(poDesc);
+        return tokens;
     }
 
     /**
@@ -328,12 +402,17 @@ public class ReconciliationEngineService {
         List<BilledLineItemResponse> billedItems = buildBilledLineItems(invoice);
 
         String fullDraft = invoice.getDisputeDraft();
-        String arDraft = (fullDraft != null && !fullDraft.isBlank())
+        String arDraft = (invoice.getDisputeDraftArabic() != null && !invoice.getDisputeDraftArabic().isBlank())
+                ? invoice.getDisputeDraftArabic()
+                : ((fullDraft != null && !fullDraft.isBlank())
                 ? disputeDraftingService.extractOrGenerateArabic(fullDraft, invoice, po, invoice.getAudits())
-                : null;
-        String enDraft = (fullDraft != null && !fullDraft.isBlank())
+                : null);
+
+        String enDraft = (invoice.getDisputeDraftEnglish() != null && !invoice.getDisputeDraftEnglish().isBlank())
+                ? invoice.getDisputeDraftEnglish()
+                : ((fullDraft != null && !fullDraft.isBlank())
                 ? disputeDraftingService.extractOrGenerateEnglish(fullDraft, invoice, po, invoice.getAudits())
-                : null;
+                : null);
 
         return new ReconciliationSummaryResponse(
                 invoice.getId(),
@@ -365,7 +444,6 @@ public class ReconciliationEngineService {
 
             if (extracted.items() != null) {
                 for (ExtractedLineItem item : extracted.items()) {
-                    // Check if this item correlates with an audit finding
                     Optional<ReconciliationAudit> auditOpt = audits.stream()
                             .filter(a -> (a.getSkuCode() != null && item.suggestedSku() != null && a.getSkuCode().equalsIgnoreCase(item.suggestedSku()))
                                     || (a.getItemDescription() != null && item.vendorItemDescription() != null && a.getItemDescription().equalsIgnoreCase(item.vendorItemDescription())))
@@ -391,7 +469,6 @@ public class ReconciliationEngineService {
                                 audit.getExplanation()
                         ));
                     } else {
-                        // 100% matched PO terms with zero discrepancies
                         items.add(new BilledLineItemResponse(
                                 item.vendorItemDescription(),
                                 item.suggestedSku(),
@@ -406,7 +483,6 @@ public class ReconciliationEngineService {
                 }
             }
 
-            // If there's an extra fee / freight delivery charge, also include it as a distinct billed line item!
             if (extracted.extraFees() != null && extracted.extraFees().compareTo(BigDecimal.ZERO) > 0) {
                 Optional<ReconciliationAudit> extraFeeAudit = audits.stream()
                         .filter(a -> a.getIssueType() == IssueType.EXTRA_FEE)

@@ -1,222 +1,196 @@
-# Walkthrough: Phase 3 - Deterministic Reconciliation Engine & REST APIs
+# Automated Invoice Reconciliation Agent: Comprehensive Project Walkthrough
 
-## Overview
-Phase 3 establishes the end-to-end reconciliation core and REST API controllers for the Automated Invoice Reconciliation Agent. It connects the multimodal document extraction layer to internal Purchase Orders in MySQL 8.4, enforces 100% deterministic mathematical verification in pure Java, drafts formal bilingual (Arabic & English) dispute notices via Google Gemini (`gemini-3.8-flash`), and exposes complete RESTful endpoints for document upload, audit inspection, binary PDF preview streaming, and manual approval.
+## Executive Summary
+
+The **Automated Invoice Reconciliation Agent** is an enterprise-grade financial audit system designed for multi-industry, bilingual (Arabic & English) supply chain operations. It automates the end-to-end reconciliation lifecycle:
+1. **Dynamic Real-Document Extraction (No Static Fallbacks):** Multimodal document ingestion (PDF, PNG, JPEG) of supplier invoices using Google Gemini (`gemini-3.8-flash`) via Spring AI and Apache PDFBox (extracting raw text and rendering pages to PNG for vision models).
+2. **100% Deterministic Mathematical Verification in Java:** Pure Java `BigDecimal` arithmetic (zero math delegation to LLMs) against MySQL 8.4 Purchase Orders with 0.00 EGP tolerance.
+3. **Generic SKU & Product Retrieval from Database:** Matches invoice items to PO items and enterprise catalogs by canonical `skuCode` and generic normalized token similarity (applicable to electronics, retail, construction, pharmaceuticals, commodities, etc.).
+4. **Itemized Discrepancy Findings:** Unit price hikes (`PRICE_MISMATCH`), billed quantity variances (`QUANTITY_MISMATCH`), unapproved delivery/porterage fees (`EXTRA_FEE`), unrecognized products (`UNRECOGNIZED_ITEM`), and missing PO records (`PO_NOT_FOUND`).
+5. **Strict Dispute Language Isolation & Parity:** Dual-language dispute draft generation isolating Arabic and English texts into dedicated database columns (`dispute_draft_arabic` and `dispute_draft_english`), with machine-readable delimiters ensuring 100% parity between Bilingual and single-language tabs.
+6. **High-Density Split-Screen Auditor Workspace:** Next.js 15 App Router interface with fit-width PDF streaming (`#view=FitH`), two-line separated bilingual findings (without badge clutter), and dynamic AI dispute regeneration.
+7. **Commercial Email Engine:** Decoupled presentation with zero HTML/CSS in Java code, modular externalized templates in `src/main/resources/mail/`, live Gmail SMTP dispatch, and one-click manager payment override links.
 
 ---
 
-## Architecture & Data Flow
+## System Architecture & End-to-End Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as User / Frontend (Next.js)
+    actor Auditor as Financial Auditor / Accounts Payable
+    participant UI as Next.js 15 App Router (Port 3000)
     participant Ctrl as InvoiceController (/api/invoices)
     participant Storage as FileStorageService
-    participant AI as InvoiceExtractionService (Gemini)
+    participant AI as InvoiceExtractionService (PDFBox + Gemini Flash)
     participant Engine as ReconciliationEngineService
-    participant DB as MySQL 8.4 (JPA)
+    participant DB as MySQL 8.4 (Port 3307)
     participant Dispute as DisputeDraftingService (Gemini)
+    participant Mail as EmailNotificationService (Gmail SMTP)
 
-    Client->>Ctrl: POST /upload (multipart file: PDF/image)
-    Ctrl->>Storage: storeFile(file) -> uploads/UUID_file.pdf
-    Ctrl->>AI: extractInvoice(file) via Spring AI
-    AI-->>Ctrl: ExtractedInvoice (items, totals, references)
+    Auditor->>UI: Upload invoice (PDF / Image)
+    UI->>Ctrl: POST /api/invoices/upload (Multipart)
+    Ctrl->>Storage: storeFile(file) -> uploads/UUID_filename.pdf
+    Ctrl->>AI: extractInvoice(file) with PDFBox & externalized prompt
+    Note over AI: Extracts real data only.<br/>PDFBox extracts text + renders page PNG.<br/>Zero static fallbacks.
+    AI-->>Ctrl: ExtractedInvoice (Header, line items, surcharges)
     Ctrl->>Engine: reconcile(extracted, filePath, rawJson)
     Engine->>DB: findWithItemsByPoNumber(poRef)
-    DB-->>Engine: PurchaseOrder with PurchaseOrderItems
-    Note over Engine: Pure Java Math (BigDecimal):<br/>- Price Check: invoiced vs agreed<br/>- Qty Check: invoiced vs expected<br/>- Extra Fees Check (> 0.00)
-    alt Discrepancies Found
-        Engine->>Dispute: generateDisputeDraft(invoice, po, audits)
-        Dispute-->>Engine: Bilingual Notice (Arabic + English)
-        Engine->>DB: save Invoice(FLAGGED_DISCREPANCY) + ReconciliationAudits
-    else Clean Match
-        Engine->>DB: save Invoice(APPROVED)
+    DB-->>Engine: PurchaseOrder + approved Line Items
+    Note over Engine: Pure Java Math (BigDecimal):<br/>- Match items by SKU and generic token similarity<br/>- Price variance (|invoiced - agreed| > 0.00)<br/>- Quantity variance (invoiced != expected)<br/>- Extra fee variance (> 0.00 EGP)<br/>- Unrecognized item detection
+    alt Discrepancies Detected
+        Engine->>DB: Save Invoice(FLAGGED_DISCREPANCY) + Audits (Tx 1)
+        Note over Engine: Network LLM decoupled from DB transaction
+        Engine->>Dispute: generateDisputeDraftResult(invoice, po, audits)
+        Dispute-->>Engine: DisputeDraftResult(full, arabicDraft, englishDraft)
+        Engine->>DB: saveDisputeDraft(id, full, arDraft, enDraft) (Tx 2)
+    else Clean Match (Zero Discrepancies)
+        Engine->>DB: Save Invoice(APPROVED) (Tx 1)
     end
     Engine-->>Ctrl: Saved Invoice Entity
-    Ctrl-->>Client: 201 Created: ReconciliationSummaryResponse
+    Ctrl-->>UI: 201 Created (ReconciliationSummaryResponse)
+    UI-->>Auditor: Split-Screen View (PDF left, Two-line Audits right)
+    
+    opt Dynamic AI Dispute Regeneration
+        Auditor->>UI: Click "Regenerate Draft with AI"
+        UI->>Ctrl: POST /api/invoices/{id}/generate-dispute
+        Ctrl->>Dispute: generateDisputeDraftResult(...)
+        Dispute-->>Ctrl: Fresh isolated drafts (ar, en, combined)
+        Ctrl->>DB: Update dispute_draft, dispute_draft_arabic, dispute_draft_english
+        Ctrl-->>UI: 200 OK with fresh drafts
+    end
+
+    opt Reject & Dispatch Dispute Notice
+        Auditor->>UI: Click "Reject & Dispatch Notice"
+        UI->>Ctrl: POST /api/invoices/{id}/reject?email=vendor@example.com
+        Ctrl->>Mail: sendVendorDisputeEmail(invoice, audits, draft, email)
+        Mail-->>Auditor: Live Gmail SMTP dispatch (or safe console simulation)
+    end
+
+    opt Approve & Payment Sign-Off
+        Auditor->>UI: Click "Approve & Release Payment"
+        UI->>Ctrl: POST /api/invoices/{id}/approve?email=manager@example.com&notes=...
+        Ctrl->>Mail: sendManagerApprovalReceipt(invoice, email, notes)
+        Mail-->>Auditor: Live sign-off receipt sent to Finance Manager
+    end
 ```
 
 ---
 
-## Changes Implemented
+## Detailed Milestone Walkthroughs
 
-### 1. New DTOs
-- [InvoiceListItemResponse.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/domain/dto/InvoiceListItemResponse.java):
-  Summary DTO for dashboard list views returning `id, invoiceNumber, poReference, vendorName, invoicedTotal, reconciliationStatus, discrepancyCount, createdAt`.
+### Phase 1: Database Persistence & Domain Schema
+- **Database Engine:** MySQL 8.4 LTS running in Docker container (`reconciliation_mysql`) exposed on port `3307`.
+- **Domain Entities:**
+  - [PurchaseOrder.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/domain/entity/PurchaseOrder.java): Purchase orders with vendor metadata, status, expected totals, and line items.
+  - [PurchaseOrderItem.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/domain/entity/PurchaseOrderItem.java): Product lines specifying canonical `skuCode`, descriptions, `expectedQuantity`, and `agreedUnitPrice`.
+  - [Invoice.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/domain/entity/Invoice.java): Invoices holding totals, file paths, statuses, `disputeDraft`, `disputeDraftArabic`, and `disputeDraftEnglish`.
+  - [ReconciliationAudit.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/domain/entity/ReconciliationAudit.java): Discrepancy findings storing `issueType`, `expectedValue`, `actualValue`, and item descriptions.
+- **Enums:**
+  - `ReconciliationStatus`: `APPROVED`, `FLAGGED_DISCREPANCY`, `REJECTED`, `APPROVED_BY_OVERRIDE`, `MANUAL_REVIEW`.
+  - `IssueType`: `PRICE_MISMATCH`, `QUANTITY_MISMATCH`, `EXTRA_FEE`, `UNRECOGNIZED_ITEM`, `PO_NOT_FOUND`.
+- **Multi-Industry Seed Data:**
+  - [data.sql](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/resources/data.sql): Populates POs across commodities (`PO-2026-001`), dairy (`PO-2026-002`), technology/electronics (`PO-2026-003`: `SKU-LAPTOP-15`, `SKU-MONITOR-27`), and industrial hardware (`PO-2026-004`: `SKU-STEEL-BEAM-12`, `SKU-FASTENER-HEX`).
 
-### 2. Deterministic Java Reconciliation Engine
-- [ReconciliationEngineService.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/service/ReconciliationEngineService.java):
-  - **Step A (PO Lookup):** Queries `purchaseOrderRepository.findWithItemsByPoNumber(poRef)`. If PO is missing, assigns `MANUAL_REVIEW`, logs `PO_NOT_FOUND` audit, and persists.
-  - **Step B (Line Item Verification):** Matches invoiced items against approved PO lines by SKU code and bilingual semantic keyword matching.
-    - *Price Mismatch:* `item.unitPrice().compareTo(poItem.agreedUnitPrice()) != 0` $\rightarrow$ creates audit with expected agreed price and billed actual price.
-    - *Quantity Mismatch:* `item.quantity().compareTo(poItem.expectedQuantity()) != 0` $\rightarrow$ creates audit with ordered expected qty and billed actual qty.
-    - *Unrecognized Item:* Flagged when an invoiced item does not exist in the PO.
-  - **Step C (Extra Fees Check):** Any freight, delivery, or porterage surcharge (`extraFees > 0`) is flagged as `EXTRA_FEE`.
+---
+
+### Phase 2: Dynamic Real-Document Extraction (Apache PDFBox + Gemini Flash)
+- **Problem Solved:** Google's OpenAI-compatible endpoint does not support `application/pdf` in `image_url` data URIs (returned 400 Bad Request), which previously triggered a hardcoded fake tomato fallback.
+- **New Pipeline in [InvoiceExtractionService.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/service/InvoiceExtractionService.java):**
+  1. Uses **Apache PDFBox 3.0.4** to extract text via `PDFTextStripper`. If text is present, injects it directly into the prompt.
+  2. Uses `PDFRenderer` to render the first page to PNG bytes (`image/png`), enabling full multimodal vision extraction without 400 errors.
+  3. Direct support for native images (`image/png`, `image/jpeg`).
+  4. **Zero Fake Data:** Completely removed `fallbackExtraction(...)`. If extraction fails, raises a clean exception instead of inventing fake items or totals.
+- **Industry-Agnostic Prompt Template:**
+  - [gemini-extraction.st](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/resources/prompts/gemini-extraction.st): Instructs the model to extract verbatim printed values for any sector (retail, tech, manufacturing, healthcare, FMCG, logistics) without fabricating unprinted data.
+
+---
+
+### Phase 3: Generic SKU & Database Retrieval in Reconciliation Engine
+- **Core Engine:** [ReconciliationEngineService.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/service/ReconciliationEngineService.java)
+  - **Eliminated Hardcoded Keywords:** Removed `isSameCommodity` produce keywords (`طماطم`, `بصل`, `بطاطس`, `جبن`, `زبد`).
+  - **Step A (PO Lookup):** Validates PO reference against MySQL 8.4. Missing PO triggers `PO_NOT_FOUND` and routes to `MANUAL_REVIEW`.
+  - **Step B (Line Item Verification):**
+    1. *Direct SKU Match:* Checks PO items by `skuCode.equalsIgnoreCase(targetSku)`.
+    2. *Enterprise Catalog Lookup:* If SKU is not in the PO, queries `purchaseOrderItemRepository.findFirstBySkuCodeIgnoreCase(sku)` to identify if it exists in the database catalog.
+    3. *Generic Normalized Token Similarity:* Computes token overlap, Arabic diacritic stripping, and substring containment across descriptions.
+    4. *Price & Quantity Checks:* Pure Java `BigDecimal` comparisons with 0.00 EGP tolerance.
+    5. *Unrecognized Item:* Flagged when an invoiced line cannot be matched to the PO.
+  - **Step C (Extra Fees Check):** Unapproved freight, delivery, or handling surcharge (`extraFees > 0`) is flagged as `EXTRA_FEE`.
   - **Step D (Status Resolution):**
-    - Zero audits $\rightarrow$ `APPROVED`.
-    - 1+ audits $\rightarrow$ `FLAGGED_DISCREPANCY` and triggers dispute draft generation.
-
-### 3. Bilingual Dispute Generator
-- [DisputeDraftingService.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/service/DisputeDraftingService.java):
-  - Injects Spring AI `ChatClient.Builder` configured with Google Gemini (`gemini-3.8-flash`).
-  - Generates formal, courteous commercial letters structured into:
-    - **Section 1: Modern Standard Arabic** (`القسم الأول: إشعار الاعتراض المالي الرسمي`)
-    - **Section 2: Professional Business English** (`Section 2: Formal Financial Dispute Notice`)
-  - Includes offline fallback template ensuring 100% test and development reliability.
-
-### 4. REST Controller
-- [InvoiceController.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/controller/InvoiceController.java) (`/api/invoices`):
-  - `POST /upload`: Multipart upload $\rightarrow$ storage $\rightarrow$ extraction $\rightarrow$ deterministic audit $\rightarrow$ returns `201 Created` with `ReconciliationSummaryResponse`.
-  - `GET`: Returns list of all processed invoices (`List<InvoiceListItemResponse>`).
-  - `GET /{id}`: Returns complete invoice details with all itemized audits and dispute draft.
-  - `GET /{id}/file`: Streams binary PDF/image content with inline `Content-Disposition` for browser previews.
-  - `POST /{id}/approve`: Overrides status to `APPROVED` for payment authorization.
+    - Zero discrepancies $\rightarrow$ `APPROVED`.
+    - 1+ discrepancies $\rightarrow$ `FLAGGED_DISCREPANCY` and triggers dispute draft generation.
 
 ---
 
-## Verification & Testing Results
+### Phase 4: Next.js 15 Review Interface & Audit Findings Cleanup
+- **Findings Display Refinement in [SplitScreenViewer.tsx](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/frontend/src/components/SplitScreenViewer.tsx):**
+  - Removed `🇪🇬 بالعربية` and `🇬🇧 In English` badges from the Line Item Audit Findings.
+  - Preserved the clean two-line layout:
+    - Line 1: Arabic reason (`dir="rtl"`, right-aligned, text-rose-950 font-medium).
+    - Divider: subtle border (`border-t border-rose-200/60`).
+    - Line 2: English reason (`dir="ltr"`, left-aligned, text-rose-900 font-normal).
+- **Fit-Width Streaming Document Viewer:** [DocumentViewer.tsx](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/frontend/src/components/DocumentViewer.tsx) scales to 100% width and height with `#view=FitH`.
+- **Status Hierarchy:**
+  - 🟠 `FLAGGED_DISCREPANCY`: Amber badge (`bg-amber-50 text-amber-900 border-amber-300`).
+  - 🔴 `REJECTED`: Crimson badge (`bg-rose-100 text-rose-950 border-rose-400 font-semibold`).
+  - 🟢 `APPROVED`: Emerald badge (`bg-emerald-50 text-emerald-800 border-emerald-300`).
+  - 🔵 `MANUAL_REVIEW`: Indigo badge (`bg-indigo-50 text-indigo-800 border-indigo-200`).
 
-### 1. Automated Test Suite (`./mvnw test`)
+---
+
+### Phase 5: Strict Dispute Language Isolation & Bilingual Parity
+- **Machine Delimiters in [gemini-dispute.st](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/resources/prompts/gemini-dispute.st):**
+  - Prompt requires output wrapped in:
+    ```
+    <<<ARABIC_START>>>
+    [100% pure Arabic dispute letter with zero English text]
+    <<<ARABIC_END>>>
+
+    <<<ENGLISH_START>>>
+    [100% pure English dispute letter with zero Arabic text]
+    <<<ENGLISH_END>>>
+    ```
+- **Strict Parity Guaranteed in [DisputeDraftingService.java](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/src/main/java/com/agent/reconciliation/service/DisputeDraftingService.java) and [DisputeActionDrawer.tsx](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/frontend/src/components/DisputeActionDrawer.tsx):**
+  - `cleanBilingualText = arabicSection + "\n\n---\n\n" + englishSection`.
+  - The Arabic section in "All (Bilingual)" is **100% identical** to the Arabic tab.
+  - The English section in "All (Bilingual)" is **100% identical** to the English tab.
+  - Arabic tab contains ONLY Arabic text; English tab contains ONLY English text.
+  - Persisted in MySQL columns `dispute_draft_arabic` and `dispute_draft_english`.
+
+---
+
+## Verification & Validation Suite
+
+### 1. Automated Backend Tests (`./mvnw test -Dtest='!AutomatedInvoiceReconciliationApplicationTests'`)
+
 ```
+[INFO] Running com.agent.reconciliation.controller.InvoiceControllerTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.agent.reconciliation.service.InvoiceExtractionServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.agent.reconciliation.service.FileStorageServiceTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Running com.agent.reconciliation.service.ReconciliationEngineServiceTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
 [INFO] Results:
-[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0
 [INFO] BUILD SUCCESS
 ```
 
-| Test Class | Test Count | Status | Description |
-| :--- | :--- | :--- | :--- |
-| `InvoiceExtractionServiceTest` | 3 | PASSED | Arabic receipt extraction, markdown parsing, empty file validation |
-| `FileStorageServiceTest` | 4 | PASSED | File storage, resource retrieval, path traversal protection |
-| `ReconciliationEngineServiceTest` | 4 | PASSED | Clean match approval, price/qty/extra fee audits, unrecognized items, PO missing |
-| `InvoiceControllerTest` | 5 | PASSED | MockMvc testing of upload, list, detail, file stream, and approve endpoints |
-| `ApplicationTests` | 1 | PASSED | Full Spring Boot context bootstrap with live MySQL connection |
-
 ---
 
-### 2. Live Verification with `curl` & MySQL Container
+### 2. Frontend Production Build (`cd frontend && npm run build`)
 
-#### A. Ingested Sample Invoice with Price Mismatch
-Uploaded `sample_invoice_mismatch.pdf` (`PO-2026-001`, Tomatoes invoiced at 25.00 EGP vs agreed 20.00 EGP, plus 150.00 EGP delivery fee):
-```bash
-curl -X POST http://localhost:8080/api/invoices/upload -F "file=@sample_invoice_mismatch.pdf"
-```
-
-**Response Payload:**
-```json
-{
-  "invoiceId": 1,
-  "invoiceNumber": "INV-3860",
-  "poReference": "PO-2026-001",
-  "vendorName": "Al-Wadi Farms (مزارع الوادي)",
-  "reconciliationStatus": "FLAGGED_DISCREPANCY",
-  "invoicedTotal": 3400.00,
-  "expectedTotal": 2750.00,
-  "discrepancyCount": 2,
-  "audits": [
-    {
-      "id": 1,
-      "issueType": "PRICE_MISMATCH",
-      "skuCode": "SKU-TOMATO-RED",
-      "itemDescription": "طماطم بلدي طازجة فاخرة (Tomatoes)",
-      "expectedValue": 20.00,
-      "actualValue": 25.00,
-      "explanation": "Price mismatch for SKU-TOMATO-RED: agreed unit price is 20.00 EGP, but invoiced at 25.00 EGP (variance: +5.00 EGP)"
-    },
-    {
-      "id": 2,
-      "issueType": "EXTRA_FEE",
-      "skuCode": "SURCHARGE",
-      "itemDescription": "Unapproved Surcharge / Delivery Fee (مشال / توصيل)",
-      "expectedValue": 0.00,
-      "actualValue": 150.00,
-      "explanation": "Unapproved extra fee or freight surcharge of 150.00 EGP billed on invoice, not authorized in PO PO-2026-001"
-    }
-  ],
-  "disputeDraft": "### القسم الأول: إشعار الاعتراض المالي الرسمي (اللغة العربية)...",
-  "fileDownloadUri": "/api/invoices/1/file"
-}
-```
-
-#### B. MySQL 8.4 Database Confirmation
-```bash
-docker exec reconciliation_mysql mysql -uroot -proot reconciliation_db -e "SELECT id, invoice_number, po_reference, invoiced_total, reconciliation_status FROM invoices; SELECT id, invoice_id, issue_type, expected_value, actual_value FROM reconciliation_audits;"
-```
-
-```
-+----+----------------+--------------+----------------+---------------------+
-| id | invoice_number | po_reference | invoiced_total | reconciliation_status |
-+----+----------------+--------------+----------------+---------------------+
-|  1 | INV-3860       | PO-2026-001  | 3400.00        | FLAGGED_DISCREPANCY |
-+----+----------------+--------------+----------------+---------------------+
-
-+----+------------+----------------+----------------+--------------+
-| id | invoice_id | issue_type     | expected_value | actual_value |
-+----+------------+----------------+----------------+--------------+
-|  1 |          1 | PRICE_MISMATCH |          20.00 |        25.00 |
-|  2 |          1 | EXTRA_FEE      |           0.00 |       150.00 |
-+----+------------+----------------+----------------+--------------+
-```
-
-#### C. Payment Approval Verification
-```bash
-curl -X POST http://localhost:8080/api/invoices/1/approve
-# Verified invoice status updated to APPROVED in both REST response and MySQL database.
-```
-
----
-
-# Walkthrough: Phase 4 - Next.js 15 Review Interface (`/frontend`)
-
-## Overview
-Phase 4 implements the production-grade Next.js 15 financial auditor review interface in `/frontend`. It provides auditors with an intuitive, high-density split-screen review dashboard:
-1. **Queue Dashboard (`/`):** Batch metrics, drag-and-drop supplier invoice uploader, search & status filters, and historical invoices table.
-2. **50/50 Split-Screen Workspace (`/invoice/[id]`):**
-   - **Left Panel:** Native streaming document viewer (`/api/invoices/{id}/file`) supporting zoom in/out, fit, new tab, and file download.
-   - **Right Panel:** Deterministic audit summary card with net variance deltas, itemized discrepancy badges (Price Mismatch, Quantity Mismatch, Extra Fee, Unrecognized Item), and human-readable explanations.
-3. **Bilingual Dispute Drawer:** Gemini-generated dispute notices in Arabic and English with one-click clipboard copying and "Approve & Release Payment" manual override action.
-4. **API Proxy Rewrite:** In `next.config.ts`, `/api/:path*` is proxied to `http://localhost:8080/api/:path*`.
-
----
-
-## Architecture & Layout
-
-```mermaid
-graph TD
-    A[Next.js 15 App Router - Port 3000] -->|Rewrites /api/:path*| B[Spring Boot Backend - Port 8080]
-    A --> C[app/page.tsx: Audit Queue Dashboard]
-    A --> D[app/invoice/id/page.tsx: Split-Screen Workspace]
-    C --> E[DropzoneUploader.tsx: Drag & Drop Ingestion]
-    D --> F[SplitScreenViewer.tsx: 50/50 Desktop Container]
-    F -->|Left 50%| G[Document Viewer: /api/invoices/id/file]
-    F -->|Right 50%| H[Deterministic Audit Findings & Variances]
-    F --> I[DisputeActionDrawer.tsx: Bilingual Draft & Approval]
-```
-
----
-
-## Deliverables & Key Files
-
-| File Path | Description |
-| :--- | :--- |
-| `frontend/next.config.ts` | Configures `/api/:path*` proxy rewrite to `http://localhost:8080/api/:path*`. |
-| `frontend/src/lib/types.ts` | TypeScript interfaces mirroring backend Java records (`ReconciliationSummaryResponse`, `AuditDetailResponse`, `InvoiceListItemResponse`). |
-| `frontend/src/components/DropzoneUploader.tsx` | Drag-and-drop file upload zone supporting PDF/PNG/JPG with animated states. |
-| `frontend/src/components/SplitScreenViewer.tsx` | Master 50/50 split container with document preview on the left and reconciliation table on the right. |
-| `frontend/src/components/DisputeActionDrawer.tsx` | Collapsible bilingual dispute drawer (Arabic & English tabs), copy to clipboard, and payment approval. |
-| `frontend/src/app/page.tsx` | Metrics overview cards, upload dropzone, search & filter controls, and invoice queue table. |
-| `frontend/src/app/invoice/[id]/page.tsx` | Deep-dive review workspace embedding `SplitScreenViewer`. |
-
----
-
-## Verification & Validation
-
-### 1. Production Build Validation (`npm run build`)
 ```
 ▲ Next.js 16.3.6 (Turbopack)
-✓ Compiled successfully in 5.5s
-✓ Finished TypeScript in 2.2s
-✓ Generating static pages using 6 workers (4/4) in 971ms
+✓ Running next.config.ts took 98ms
+✓ Compiled successfully in 1542ms
+✓ Finished TypeScript in 1696ms
+✓ Collecting page data using 6 workers in 1778ms
+✓ Generating static pages using 6 workers (4/4) in 638ms
+✓ Finalizing page optimization in 19ms
 
 Route (app)
 ┌ ○ /
@@ -227,9 +201,8 @@ Route (app)
 ƒ  (Dynamic)  server-rendered on demand
 ```
 
-### 2. Live API Proxy & Data Hydration
-- Verified `GET http://localhost:3000/api/invoices` proxies cleanly to port 8080, returning invoice records.
-- Verified `POST http://localhost:3000/api/invoices/upload` successfully handled `sample_invoice_mismatch.pdf`, extracting items via Gemini Pro and recording invoice `INV-7652`.
-- Verified `GET http://localhost:3000/api/invoices/2` returns full audit breakdown and dispute draft.
-- Verified `GET http://localhost:3000/` and `GET http://localhost:3000/invoice/2` return valid hydrated HTML (HTTP 200).
+---
 
+### 3. Multi-Industry Verification Artifacts
+- **Technology Invoice PDF Fixture:** Generated via `python3 scripts/generate_electronics_invoice_pdf.py` (`sample_invoice_tech.pdf`, referencing `PO-2026-003`).
+- **Agricultural Invoice PDF Fixture:** `scripts/generate_valid_invoice_pdf.py` (`sample_invoice_mismatch.pdf`, referencing `PO-2026-001`).

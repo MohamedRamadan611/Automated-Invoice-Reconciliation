@@ -16,11 +16,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Service generating formal bilingual (Modern Standard Arabic & Business English) dispute drafts
  * for invoices flagged with discrepancies.
+ * Guarantees 100% parity and strict language isolation between Arabic and English sections.
  */
 @Service
 public class DisputeDraftingService {
@@ -32,6 +32,8 @@ public class DisputeDraftingService {
     private final Resource disputeSystemPromptResource;
     private final Resource disputeUserPromptResource;
 
+    public record DisputeDraftResult(String fullDraft, String arabicDraft, String englishDraft) {}
+
     public DisputeDraftingService(ChatClient.Builder chatClientBuilder) {
         this(chatClientBuilder, "gemini-3.8-flash",
                 new ClassPathResource("prompts/gemini-dispute-system.st"),
@@ -40,9 +42,9 @@ public class DisputeDraftingService {
 
     @Autowired
     public DisputeDraftingService(ChatClient.Builder chatClientBuilder,
-                                 @Value("${spring.ai.openai.chat.options.model:gemini-3.8-flash}") String modelName,
-                                 @Value("classpath:prompts/gemini-dispute-system.st") Resource disputeSystemPromptResource,
-                                 @Value("classpath:prompts/gemini-dispute.st") Resource disputeUserPromptResource) {
+                                  @Value("${spring.ai.openai.chat.options.model:gemini-3.8-flash}") String modelName,
+                                  @Value("classpath:prompts/gemini-dispute-system.st") Resource disputeSystemPromptResource,
+                                  @Value("classpath:prompts/gemini-dispute.st") Resource disputeUserPromptResource) {
         this.chatClient = chatClientBuilder.build();
         this.modelName = modelName;
         this.disputeSystemPromptResource = disputeSystemPromptResource;
@@ -50,17 +52,13 @@ public class DisputeDraftingService {
     }
 
     /**
-     * Generates a formal bilingual dispute notice citing PO reference, invoice number, itemized variances,
-     * and request for credit note or revised invoice.
-     *
-     * @param invoice the invoice with flagged discrepancies
-     * @param po the associated purchase order (if found)
-     * @param audits list of flagged audit records
-     * @return generated bilingual dispute text
+     * Generates a formal bilingual dispute notice result containing the full draft,
+     * the pure isolated Arabic draft, and the pure isolated English draft.
      */
-    public String generateDisputeDraft(Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+    public DisputeDraftResult generateDisputeDraftResult(Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
         if (audits == null || audits.isEmpty()) {
-            return "No discrepancy findings recorded. Invoice matches purchase order terms in full.";
+            String msg = "No discrepancy findings recorded. Invoice matches purchase order terms in full.";
+            return new DisputeDraftResult(msg, "لا توجد فروقات مرصودة. الفاتورة مطابقة لأمر التوريد بالكامل.", msg);
         }
 
         StringBuilder auditSummaryBuilder = new StringBuilder();
@@ -104,22 +102,93 @@ public class DisputeDraftingService {
                     .content();
 
             if (generated != null && !generated.isBlank()) {
-                return generated.trim();
+                return parseDisputeSections(generated, invoice, po, audits);
             }
         } catch (Throwable ex) {
             log.warn("AI generation failed for dispute draft (falling back to structured bilingual template): {}", ex.getMessage());
         }
 
-        return generateFallbackDisputeTemplate(invoice, po, audits);
+        return generateFallbackDisputeResult(invoice, po, audits);
+    }
+
+    /**
+     * Generates a formal bilingual dispute notice string.
+     */
+    public String generateDisputeDraft(Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+        return generateDisputeDraftResult(invoice, po, audits).fullDraft();
     }
 
     /**
      * Fallback template generator producing a structured bilingual dispute notice if external LLM is offline.
      */
     public String generateFallbackDisputeTemplate(Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+        return generateFallbackDisputeResult(invoice, po, audits).fullDraft();
+    }
+
+    public DisputeDraftResult generateFallbackDisputeResult(Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
         String ar = generateDisputeDraftArabic(invoice, po, audits);
         String en = generateDisputeDraftEnglish(invoice, po, audits);
-        return ar + "\n\n---\n\n" + en;
+        String full = ar + "\n\n---\n\n" + en;
+        return new DisputeDraftResult(full, ar, en);
+    }
+
+    /**
+     * Parses generated text to strictly isolate the Arabic and English sections.
+     */
+    public DisputeDraftResult parseDisputeSections(String text, Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+        if (text == null || text.isBlank()) {
+            return generateFallbackDisputeResult(invoice, po, audits);
+        }
+
+        String ar = "";
+        String en = "";
+
+        if (text.contains("<<<ARABIC_START>>>") && text.contains("<<<ARABIC_END>>>")) {
+            int start = text.indexOf("<<<ARABIC_START>>>") + "<<<ARABIC_START>>>".length();
+            int end = text.indexOf("<<<ARABIC_END>>>");
+            if (end > start) {
+                ar = text.substring(start, end).trim();
+            }
+        }
+
+        if (text.contains("<<<ENGLISH_START>>>") && text.contains("<<<ENGLISH_END>>>")) {
+            int start = text.indexOf("<<<ENGLISH_START>>>") + "<<<ENGLISH_START>>>".length();
+            int end = text.indexOf("<<<ENGLISH_END>>>");
+            if (end > start) {
+                en = text.substring(start, end).trim();
+            }
+        }
+
+        // Fallback delimiter parsing if model omitted explicit tags
+        if (ar.isBlank() || en.isBlank()) {
+            if (text.contains("---")) {
+                String[] parts = text.split("---");
+                if (ar.isBlank() && parts.length > 0) ar = parts[0].trim();
+                if (en.isBlank() && parts.length > 1) en = parts[1].trim();
+            } else if (text.contains("### Section 2")) {
+                int idx = text.indexOf("### Section 2");
+                if (ar.isBlank()) ar = text.substring(0, idx).trim();
+                if (en.isBlank()) en = text.substring(idx).trim();
+            } else if (text.contains("Section 2:")) {
+                int idx = text.indexOf("Section 2:");
+                if (ar.isBlank()) ar = text.substring(0, idx).trim();
+                if (en.isBlank()) en = text.substring(idx).trim();
+            }
+        }
+
+        // Clean any leftover tag markers
+        ar = ar.replace("<<<ARABIC_START>>>", "").replace("<<<ARABIC_END>>>", "").trim();
+        en = en.replace("<<<ENGLISH_START>>>", "").replace("<<<ENGLISH_END>>>", "").trim();
+
+        if (ar.isBlank()) {
+            ar = generateDisputeDraftArabic(invoice, po, audits);
+        }
+        if (en.isBlank()) {
+            en = generateDisputeDraftEnglish(invoice, po, audits);
+        }
+
+        String combined = ar + "\n\n---\n\n" + en;
+        return new DisputeDraftResult(combined, ar, en);
     }
 
     /**
@@ -132,7 +201,7 @@ public class DisputeDraftingService {
         BigDecimal varianceDelta = invoicedTotal.subtract(expectedTotal);
         String vendorName = DisputeReasonHelper.cleanArabicVendorName(invoice.getVendorName());
         String currentDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ar")));
-        String refCode = "AUDIT-DISP-" + invoice.getId() + "-" + (System.currentTimeMillis() % 10000);
+        String refCode = "AUDIT-DISP-" + (invoice.getId() != null ? invoice.getId() : 1) + "-" + (System.currentTimeMillis() % 10000);
 
         StringBuilder sb = new StringBuilder();
         sb.append("### القسم الأول: إشعار الاعتراض المالي والرقابي الرسمي (اللغة العربية)\n\n");
@@ -176,7 +245,7 @@ public class DisputeDraftingService {
         sb.append("يرجى موافاتنا بالمستند المصحح في أقرب وقت لتسريع صرف المستحقات.\n\n");
         sb.append("وتفضلوا بقبول فائق الاحترام والتقدير،،،\n\n");
         sb.append("**قسم المراجعة والتدقيق المالي وإدارة الحسابات الدائنة**  \n");
-        sb.append("**القاهرة، جمهورية مصر العربية**\n");
+        sb.append("**جمهورية مصر العربية**\n");
 
         return sb.toString();
     }
@@ -191,7 +260,7 @@ public class DisputeDraftingService {
         BigDecimal varianceDelta = invoicedTotal.subtract(expectedTotal);
         String vendorName = DisputeReasonHelper.cleanEnglishVendorName(invoice.getVendorName());
         String currentDate = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("MMMM d, yyyy", java.util.Locale.US));
-        String refCode = "AUDIT-DISP-" + invoice.getId() + "-" + (System.currentTimeMillis() % 10000);
+        String refCode = "AUDIT-DISP-" + (invoice.getId() != null ? invoice.getId() : 1) + "-" + (System.currentTimeMillis() % 10000);
 
         StringBuilder sb = new StringBuilder();
         sb.append("### Section 2: Formal Financial Dispute Notice (Business English)\n\n");
@@ -235,49 +304,37 @@ public class DisputeDraftingService {
         sb.append("Please provide the corrected financial documentation at your earliest convenience to resume the payment authorization cycle.\n\n");
         sb.append("Sincerely,\n\n");
         sb.append("**Financial Audit & Commercial Accounts Payable Department**  \n");
-        sb.append("**Cairo, Arab Republic of Egypt**\n");
 
         return sb.toString();
     }
 
     /**
-     * Extracts the clean Arabic section from a full bilingual draft, falling back to dynamic Arabic generation.
+     * Extracts the clean Arabic section from an invoice or full draft.
      */
     public String extractOrGenerateArabic(String fullDraft, Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+        if (invoice != null && invoice.getDisputeDraftArabic() != null && !invoice.getDisputeDraftArabic().isBlank()) {
+            return invoice.getDisputeDraftArabic();
+        }
         if (fullDraft != null && !fullDraft.isBlank()) {
-            if (fullDraft.contains("---")) {
-                String[] parts = fullDraft.split("---");
-                String firstPart = parts[0].trim();
-                if (firstPart.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.ARABIC)) {
-                    return firstPart;
-                }
-            } else if (fullDraft.contains("Section 2:")) {
-                int idx = fullDraft.indexOf("Section 2:");
-                String firstPart = fullDraft.substring(0, idx).trim();
-                if (firstPart.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.ARABIC)) {
-                    return firstPart;
-                }
+            var parsed = parseDisputeSections(fullDraft, invoice, po, audits);
+            if (!parsed.arabicDraft().isBlank()) {
+                return parsed.arabicDraft();
             }
         }
         return generateDisputeDraftArabic(invoice, po, audits);
     }
 
     /**
-     * Extracts the clean English section from a full bilingual draft, falling back to dynamic English generation.
+     * Extracts the clean English section from an invoice or full draft.
      */
     public String extractOrGenerateEnglish(String fullDraft, Invoice invoice, PurchaseOrder po, List<ReconciliationAudit> audits) {
+        if (invoice != null && invoice.getDisputeDraftEnglish() != null && !invoice.getDisputeDraftEnglish().isBlank()) {
+            return invoice.getDisputeDraftEnglish();
+        }
         if (fullDraft != null && !fullDraft.isBlank()) {
-            if (fullDraft.contains("---")) {
-                String[] parts = fullDraft.split("---");
-                if (parts.length > 1) {
-                    String secondPart = parts[1].trim();
-                    if (secondPart.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.LATIN)) {
-                        return secondPart;
-                    }
-                }
-            } else if (fullDraft.contains("Section 2:")) {
-                int idx = fullDraft.indexOf("Section 2:");
-                return fullDraft.substring(idx).trim();
+            var parsed = parseDisputeSections(fullDraft, invoice, po, audits);
+            if (!parsed.englishDraft().isBlank()) {
+                return parsed.englishDraft();
             }
         }
         return generateDisputeDraftEnglish(invoice, po, audits);

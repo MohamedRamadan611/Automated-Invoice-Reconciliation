@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 
 /**
  * Utility helper generating clear, formal audit descriptions and reasons in both Arabic and English.
+ * Completely generic across all commodities and industries; zero hardcoded vendor or item mappings.
  */
 public class DisputeReasonHelper {
 
@@ -16,8 +17,8 @@ public class DisputeReasonHelper {
         if (issueType == null) return "فارق تدقيق";
         return switch (issueType) {
             case PRICE_MISMATCH -> "اختلاف في سعر الوحدة";
-            case QUANTITY_MISMATCH -> "اختلاف في الكمية المورّدة";
-            case EXTRA_FEE -> "رسوم إضافية غير معتمدة (مشال/شحن)";
+            case QUANTITY_MISMATCH -> "اختلاف في الكمية أو الوزن المورّد";
+            case EXTRA_FEE -> "رسوم إضافية غير معتمدة (مشال/شحن/مصاريف إدارية)";
             case UNRECOGNIZED_ITEM -> "بند غير وارد بأمر التوريد";
             case PO_NOT_FOUND -> "أمر التوريد غير مسجل";
         };
@@ -27,8 +28,8 @@ public class DisputeReasonHelper {
         if (issueType == null) return "Audit Discrepancy";
         return switch (issueType) {
             case PRICE_MISMATCH -> "Unit Price Mismatch";
-            case QUANTITY_MISMATCH -> "Quantity Mismatch";
-            case EXTRA_FEE -> "Unapproved Surcharge / Fee";
+            case QUANTITY_MISMATCH -> "Quantity / Weight Mismatch";
+            case EXTRA_FEE -> "Unapproved Surcharge / Logistics Fee";
             case UNRECOGNIZED_ITEM -> "Unrecognized Line Item";
             case PO_NOT_FOUND -> "PO Reference Missing";
         };
@@ -37,69 +38,83 @@ public class DisputeReasonHelper {
     public static String cleanArabicItemDescription(String desc) {
         if (desc == null || desc.isBlank()) return "الصنف المحدد";
         String trimmed = desc.trim();
-        if (trimmed.contains("Tomatoes") || trimmed.contains("طماطم")) {
-            return "طماطم بلدي طازجة فاخرة";
-        }
-        if (trimmed.contains("Onions") || trimmed.contains("بصل")) {
-            return "بصل أحمر بلدي درجة أولى";
-        }
-        if (trimmed.toLowerCase().contains("surcharge") || trimmed.contains("مشال") || trimmed.contains("توصيل")) {
-            return "رسوم مشال ونقل وتوصيل إضافية";
-        }
-        // If it has Arabic text before parenthesis, extract it
+
+        // If it has Arabic text inside or outside parentheses, extract the Arabic part
         if (trimmed.contains("(") && trimmed.contains(")")) {
             int openIdx = trimmed.indexOf('(');
+            int closeIdx = trimmed.indexOf(')');
             String before = trimmed.substring(0, openIdx).trim();
-            if (before.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.ARABIC)) {
+            if (containsArabic(before)) {
                 return before;
             }
-            int closeIdx = trimmed.indexOf(')');
-            String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
-            if (inside.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.ARABIC)) {
-                return inside;
+            if (closeIdx > openIdx) {
+                String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
+                if (containsArabic(inside)) {
+                    return inside;
+                }
             }
         }
+
         return trimmed;
     }
 
     public static String cleanEnglishItemDescription(String desc) {
         if (desc == null || desc.isBlank()) return "Specified Line Item";
         String trimmed = desc.trim();
-        if (trimmed.contains("Tomatoes") || trimmed.contains("طماطم")) {
-            return "Fresh Premium Local Tomatoes";
-        }
-        if (trimmed.contains("Onions") || trimmed.contains("بصل")) {
-            return "Fresh Grade A Red Onions";
-        }
-        if (trimmed.toLowerCase().contains("surcharge") || trimmed.contains("مشال") || trimmed.contains("توصيل")) {
-            return "Express Freight & Delivery Surcharge";
-        }
-        // If it has English text in parentheses, extract it
+
+        // If it has English text inside or outside parentheses, extract the English part
         if (trimmed.contains("(") && trimmed.contains(")")) {
             int openIdx = trimmed.indexOf('(');
             int closeIdx = trimmed.indexOf(')');
-            String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
-            if (inside.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.LATIN)) {
-                return inside;
+            if (closeIdx > openIdx) {
+                String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
+                if (containsLatin(inside)) {
+                    return inside;
+                }
             }
             String before = trimmed.substring(0, openIdx).trim();
-            if (before.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.LATIN)) {
+            if (containsLatin(before)) {
                 return before;
             }
         }
+
         return trimmed;
     }
 
     public static String cleanArabicVendorName(String vendor) {
         if (vendor == null || vendor.isBlank()) return "السادة المورد المحترمون";
-        if (vendor.contains("مزارع الوادي")) return "شركة مزارع الوادي للتوريدات الزراعية";
-        return vendor.replaceAll("[a-zA-Z()\\-]", "").trim();
+        String trimmed = vendor.trim();
+
+        if (trimmed.contains("(") && trimmed.contains(")")) {
+            int openIdx = trimmed.indexOf('(');
+            int closeIdx = trimmed.indexOf(')');
+            if (closeIdx > openIdx) {
+                String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
+                if (containsArabic(inside)) return inside;
+            }
+            String before = trimmed.substring(0, openIdx).trim();
+            if (containsArabic(before)) return before;
+        }
+
+        return trimmed;
     }
 
     public static String cleanEnglishVendorName(String vendor) {
         if (vendor == null || vendor.isBlank()) return "Distinguished Vendor Management";
-        if (vendor.contains("Al-Wadi")) return "Al-Wadi Commercial Farms Ltd.";
-        return vendor.replaceAll("[\\u0600-\\u06FF()\\-]", "").trim();
+        String trimmed = vendor.trim();
+
+        if (trimmed.contains("(") && trimmed.contains(")")) {
+            int openIdx = trimmed.indexOf('(');
+            String before = trimmed.substring(0, openIdx).trim();
+            if (containsLatin(before)) return before;
+            int closeIdx = trimmed.indexOf(')');
+            if (closeIdx > openIdx) {
+                String inside = trimmed.substring(openIdx + 1, closeIdx).trim();
+                if (containsLatin(inside)) return inside;
+            }
+        }
+
+        return trimmed;
     }
 
     public static String getArabicReason(ReconciliationAudit audit) {
@@ -166,9 +181,6 @@ public class DisputeReasonHelper {
         };
     }
 
-    /**
-     * Combines Arabic and English reasons into a single coherent explanation.
-     */
     public static String getBilingualExplanation(ReconciliationAudit audit) {
         String ar = getArabicReason(audit);
         String en = getEnglishReason(audit);
@@ -179,5 +191,13 @@ public class DisputeReasonHelper {
 
     public static String getBilingualReason(ReconciliationAudit audit) {
         return getBilingualExplanation(audit);
+    }
+
+    private static boolean containsArabic(String s) {
+        return s != null && s.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.ARABIC);
+    }
+
+    private static boolean containsLatin(String s) {
+        return s != null && s.chars().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.LATIN);
     }
 }

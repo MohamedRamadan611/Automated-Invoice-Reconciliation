@@ -15,4 +15,8 @@ public interface PurchaseOrderItemRepository extends JpaRepository<PurchaseOrder
     List<PurchaseOrderItem> findByPurchaseOrderPoNumber(String poNumber);
 
     Optional<PurchaseOrderItem> findByPurchaseOrderIdAndSkuCode(Long purchaseOrderId, String skuCode);
+
+    List<PurchaseOrderItem> findBySkuCodeIgnoreCase(String skuCode);
+
+    Optional<PurchaseOrderItem> findFirstBySkuCodeIgnoreCase(String skuCode);
 }

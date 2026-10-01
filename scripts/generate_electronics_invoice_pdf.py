@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""
+Generates a valid PDF 1.4 invoice for the Technology & Electronics sector.
+References PO-2026-003 (Apex Technology Solutions).
+Requires zero external dependencies (pure Python).
+"""
+import sys
+import os
+
+def create_electronics_invoice_pdf(output_path):
+    content_stream = """BT
+/F1 20 Tf
+50 740 Td
+(APEX TECHNOLOGY SOLUTIONS) Tj
+ET
+BT
+/F2 10 Tf
+50 724 Td
+(Commercial Enterprise Hardware & IT Infrastructure - Smart Village, Cairo) Tj
+ET
+BT
+/F1 14 Tf
+400 740 Td
+(COMMERCIAL INVOICE) Tj
+ET
+BT
+/F2 9 Tf
+400 724 Td
+(Invoice No: INV-TECH-8820) Tj
+400 710 Td
+(Date: 2026-09-30) Tj
+400 696 Td
+(PO Reference: PO-2026-003) Tj
+ET
+
+% Horizontal separator line
+0.75 0.75 0.75 RG
+1 w
+50 680 m 562 680 l S
+
+% Billing Details
+BT
+/F1 10 Tf
+50 660 Td
+(Billed To:) Tj
+ET
+BT
+/F2 9 Tf
+50 646 Td
+(Enterprise Operations Group) Tj
+50 634 Td
+(New Cairo Business Park, Sector 1) Tj
+50 622 Td
+(Attn: IT Procurement & Accounts Payable) Tj
+ET
+
+% Table Header Background
+0.94 0.96 0.98 rg
+50 580 512 24 re f
+
+% Table Header Borders
+0.80 0.83 0.88 RG
+0.5 w
+50 580 512 24 re S
+
+% Table Header Text
+BT
+/F1 9 Tf
+0.1 0.15 0.25 rg
+60 588 Td
+(Item Description) Tj
+250 588 Td
+(SKU Code) Tj
+350 588 Td
+(Quantity) Tj
+420 588 Td
+(Unit Rate) Tj
+500 588 Td
+(Total Amount) Tj
+ET
+
+% Row 1: Laptops (Invoiced at agreed rate: 3 units @ 22,000.00 = 66,000.00 EGP)
+BT
+/F2 9 Tf
+0.2 0.2 0.2 rg
+60 558 Td
+(Commercial Business Laptop 15-inch 16GB) Tj
+250 558 Td
+(SKU-LAPTOP-15) Tj
+350 558 Td
+(3 units) Tj
+420 558 Td
+(22,000.00) Tj
+500 558 Td
+(66,000.00 EGP) Tj
+ET
+
+% Row 2: 27-inch Monitors (Price Mismatch: agreed 9,500.00, billed 10,500.00 = 21,000.00 EGP)
+BT
+/F2 9 Tf
+0.2 0.2 0.2 rg
+60 534 Td
+(Ultra-HD 27-inch IPS Monitor) Tj
+250 534 Td
+(SKU-MONITOR-27) Tj
+350 534 Td
+(2 units) Tj
+420 534 Td
+(10,500.00) Tj
+500 534 Td
+(21,000.00 EGP) Tj
+ET
+
+% Row 3: Express Courier & On-Site Installation (Extra Fee: 1,500.00 EGP)
+BT
+/F2 9 Tf
+0.2 0.2 0.2 rg
+60 510 Td
+(Express Secure Logistics & Technical Setup) Tj
+250 510 Td
+(SURCHARGE) Tj
+350 510 Td
+(1 service) Tj
+420 510 Td
+(1,500.00) Tj
+500 510 Td
+(1,500.00 EGP) Tj
+ET
+
+% Divider
+0.8 0.8 0.8 RG
+50 496 m 562 496 l S
+
+% Totals Box
+BT
+/F1 10 Tf
+380 470 Td
+(Subtotal:) Tj
+490 470 Td
+(87,000.00 EGP) Tj
+380 454 Td
+(Logistics & Setup:) Tj
+490 454 Td
+(1,500.00 EGP) Tj
+/F1 12 Tf
+0.7 0.1 0.1 rg
+380 430 Td
+(Grand Total:) Tj
+490 430 Td
+(88,500.00 EGP) Tj
+ET
+
+% Footer Note
+BT
+/F2 8 Tf
+0.5 0.5 0.5 rg
+50 380 Td
+(Payment Terms: Net 30 Days. Commercial Bank of Egypt. Subject to signed PO-2026-003 terms.) Tj
+ET
+"""
+    stream_bytes = content_stream.encode('latin1')
+    stream_length = len(stream_bytes)
+
+    objects = []
+
+    # 1: Catalog
+    objects.append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+    # 2: Pages
+    objects.append("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+    # 3: Page
+    objects.append("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>\nendobj\n")
+
+    # 4: Contents Stream
+    objects.append(f"4 0 obj\n<< /Length {stream_length} >>\nstream\n".encode('latin1') + stream_bytes + b"\nendstream\nendobj\n")
+
+    # 5: Font F1 (Helvetica-Bold)
+    objects.append("5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>\nendobj\n")
+
+    # 6: Font F2 (Helvetica)
+    objects.append("6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>\nendobj\n")
+
+    # Compute xref offsets
+    header = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    
+    with open(output_path, "wb") as f:
+        f.write(header)
+        offsets = [0] # 0 obj offset
+        current_offset = len(header)
+
+        for obj in objects:
+            offsets.append(current_offset)
+            if isinstance(obj, str):
+                b = obj.encode('latin1')
+            else:
+                b = obj
+            f.write(b)
+            current_offset += len(b)
+
+        # xref table
+        xref_offset = current_offset
+        xref = f"xref\n0 {len(offsets)}\n0000000000 65535 f \n"
+        for off in offsets[1:]:
+            xref += f"{off:010d} 00000 n \n"
+        
+        trailer = f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+        f.write(xref.encode('latin1'))
+        f.write(trailer.encode('latin1'))
+
+    print(f"Generated technology invoice PDF: {output_path} ({os.path.getsize(output_path)} bytes)")
+
+if __name__ == "__main__":
+    out = "sample_invoice_tech.pdf"
+    if len(sys.argv) > 1:
+        out = sys.argv[1]
+    create_electronics_invoice_pdf(out)

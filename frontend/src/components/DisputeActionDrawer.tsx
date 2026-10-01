@@ -58,9 +58,25 @@ export default function DisputeActionDrawer({
 
   const disputeText = invoice.disputeDraft || "No dispute notice generated.";
 
-  // Pure Arabic and English sections from API or clean fallback parser
+  // Pure Arabic and English sections from API or clean delimiter parser
   let arabicSection = invoice.disputeDraftArabic?.trim() || "";
   let englishSection = invoice.disputeDraftEnglish?.trim() || "";
+
+  if (!arabicSection && disputeText.includes("<<<ARABIC_START>>>")) {
+    const start = disputeText.indexOf("<<<ARABIC_START>>>") + "<<<ARABIC_START>>>".length;
+    const end = disputeText.indexOf("<<<ARABIC_END>>>");
+    if (end > start) {
+      arabicSection = disputeText.substring(start, end).trim();
+    }
+  }
+
+  if (!englishSection && disputeText.includes("<<<ENGLISH_START>>>")) {
+    const start = disputeText.indexOf("<<<ENGLISH_START>>>") + "<<<ENGLISH_START>>>".length;
+    const end = disputeText.indexOf("<<<ENGLISH_END>>>");
+    if (end > start) {
+      englishSection = disputeText.substring(start, end).trim();
+    }
+  }
 
   if (!arabicSection || !englishSection) {
     if (disputeText.includes("---")) {
@@ -75,11 +91,17 @@ export default function DisputeActionDrawer({
       const idx = disputeText.indexOf("Section 2:");
       if (!arabicSection) arabicSection = disputeText.substring(0, idx).trim();
       if (!englishSection) englishSection = disputeText.substring(idx).trim();
-    } else {
-      if (!arabicSection) arabicSection = disputeText;
-      if (!englishSection) englishSection = disputeText;
     }
   }
+
+  // Strip any leftover delimiter tags
+  arabicSection = arabicSection.replace(/<<<ARABIC_START>>>|<<<ARABIC_END>>>/g, "").trim();
+  englishSection = englishSection.replace(/<<<ENGLISH_START>>>|<<<ENGLISH_END>>>/g, "").trim();
+
+  // Unified clean bilingual text guaranteeing 100% exact parity with Arabic and English tabs
+  const cleanBilingualText = (arabicSection && englishSection)
+    ? `${arabicSection}\n\n---\n\n${englishSection}`
+    : disputeText.replace(/<<<[A-Z_]+>>>/g, "").trim();
 
   const handleCopy = async (textToCopy: string) => {
     try {
@@ -240,7 +262,7 @@ export default function DisputeActionDrawer({
                   ? arabicSection
                   : activeTab === "en"
                   ? englishSection
-                  : disputeText
+                  : cleanBilingualText
               )
             }
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-xs transition-colors"
@@ -543,7 +565,7 @@ export default function DisputeActionDrawer({
           <div className="relative bg-slate-900 rounded-xl p-5 text-slate-100 text-xs font-mono leading-relaxed max-h-72 overflow-y-auto shadow-inner border border-slate-800">
             {activeTab === "both" && (
               <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-200">
-                {disputeText}
+                {cleanBilingualText}
               </pre>
             )}
             {activeTab === "ar" && (
