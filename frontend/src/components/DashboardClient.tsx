@@ -98,20 +98,20 @@ export default function DashboardClient() {
         };
       case "FLAGGED_DISCREPANCY":
         return {
-          bg: "bg-amber-50 text-amber-900 border-amber-300",
-          icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />,
+          bg: "bg-rose-50 text-rose-800 border-rose-300",
+          icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />,
           label: "Flagged Discrepancy",
         };
       case "MANUAL_REVIEW":
         return {
-          bg: "bg-slate-100 text-slate-700 border-slate-300",
-          icon: <FileText className="w-3.5 h-3.5 text-slate-500" />,
+          bg: "bg-amber-50 text-amber-900 border-amber-300",
+          icon: <Layers className="w-3.5 h-3.5 text-amber-600" />,
           label: "PO Not Found / Manual",
         };
       case "REJECTED":
         return {
-          bg: "bg-rose-50 text-rose-800 border-rose-300",
-          icon: <XCircle className="w-3.5 h-3.5 text-rose-600" />,
+          bg: "bg-slate-100 text-slate-800 border-slate-300",
+          icon: <XCircle className="w-3.5 h-3.5 text-slate-600" />,
           label: "Rejected",
         };
       default:
@@ -178,7 +178,7 @@ export default function DashboardClient() {
 
           {/* Discrepancies */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div>
@@ -186,10 +186,10 @@ export default function DashboardClient() {
                 Discrepancies
               </p>
               <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-amber-800">
+                <span className="text-2xl font-bold font-mono text-rose-800">
                   {metrics.discrepancies}
                 </span>
-                <span className="text-xs text-amber-700/80 font-medium">Flagged</span>
+                <span className="text-xs text-rose-700/80 font-medium">Flagged</span>
               </div>
             </div>
           </div>
@@ -214,7 +214,7 @@ export default function DashboardClient() {
 
           {/* Rejected */}
           <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
               <XCircle className="w-5 h-5" />
             </div>
             <div>
@@ -222,10 +222,10 @@ export default function DashboardClient() {
                 Rejected
               </p>
               <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-rose-800">
+                <span className="text-2xl font-bold font-mono text-slate-800">
                   {metrics.rejected}
                 </span>
-                <span className="text-xs text-rose-700/80 font-medium">Disputed</span>
+                <span className="text-xs text-slate-600/80 font-medium">Disputed</span>
               </div>
             </div>
           </div>

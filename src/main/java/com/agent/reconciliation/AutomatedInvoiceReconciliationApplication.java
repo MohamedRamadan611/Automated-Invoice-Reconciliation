@@ -35,7 +35,8 @@ public class AutomatedInvoiceReconciliationApplication {
                         int eqIdx = trimmed.indexOf('=');
                         String key = trimmed.substring(0, eqIdx).trim();
                         String value = trimmed.substring(eqIdx + 1).trim();
-                        if (System.getProperty(key) == null && System.getenv(key) == null && !value.isEmpty()) {
+                        value = value.replaceAll("^[\"']|[\"']$", "").trim();
+                        if (!value.isEmpty()) {
                             System.setProperty(key, value);
                         }
                     }

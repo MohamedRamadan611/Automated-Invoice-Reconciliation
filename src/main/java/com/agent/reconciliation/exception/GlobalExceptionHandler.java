@@ -67,6 +67,13 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex, HttpServletRequest request) {
+        String msg = ex.getMessage() != null ? ex.getMessage() : "";
+        if (msg.contains("Broken pipe") || msg.contains("Connection reset") || ex.getClass().getSimpleName().contains("ClientAbort")
+                || ex.getClass().getName().contains("AsyncRequestNotUsableException")) {
+            log.warn("Client disconnected or aborted request on [{}]: {}", request.getRequestURI(), msg);
+            return null;
+        }
+
         log.error("Unhandled exception on [{}]: {}", request.getRequestURI(), ex.getMessage(), ex);
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),

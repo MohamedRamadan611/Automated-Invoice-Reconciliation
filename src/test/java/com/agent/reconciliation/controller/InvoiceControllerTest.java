@@ -59,6 +59,9 @@ class InvoiceControllerTest {
     @MockBean
     private com.agent.reconciliation.repository.PurchaseOrderRepository purchaseOrderRepository;
 
+    @MockBean
+    private com.agent.reconciliation.service.HmacTokenService hmacTokenService;
+
     @Autowired
     private ObjectMapper objectMapper;
 

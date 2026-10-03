@@ -38,6 +38,10 @@ export default function SplitScreenViewer({
   const [invoice, setInvoice] = useState<ReconciliationSummaryResponse>(initialInvoice);
   const [activeRightTab, setActiveRightTab] = useState<"findings" | "dispute" | "combined">("combined");
 
+  React.useEffect(() => {
+    setInvoice(initialInvoice);
+  }, [initialInvoice]);
+
   const handleUpdate = (updated: ReconciliationSummaryResponse) => {
     setInvoice(updated);
     if (onInvoiceUpdated) {
@@ -68,24 +72,24 @@ export default function SplitScreenViewer({
           icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
           label: "Approved for Payment",
         };
-      case "REJECTED":
-        return {
-          bg: "bg-rose-100 text-rose-950 border-rose-400 ring-1 ring-rose-500/30 font-semibold shadow-xs",
-          icon: <XCircle className="w-4 h-4 text-rose-700" />,
-          label: "Rejected - Dispute Transmitted",
-        };
       case "FLAGGED_DISCREPANCY":
         return {
-          bg: "bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-500/20",
-          icon: <AlertTriangle className="w-4 h-4 text-amber-600" />,
+          bg: "bg-rose-50 text-rose-800 border-rose-300 ring-1 ring-rose-500/20",
+          icon: <AlertTriangle className="w-4 h-4 text-rose-600" />,
           label: "Flagged Discrepancy",
         };
       case "MANUAL_REVIEW":
+        return {
+          bg: "bg-amber-50 text-amber-900 border-amber-300 ring-1 ring-amber-500/20",
+          icon: <Layers className="w-4 h-4 text-amber-600" />,
+          label: "Manual Review Required",
+        };
+      case "REJECTED":
       default:
         return {
-          bg: "bg-indigo-50 text-indigo-800 border-indigo-200 ring-1 ring-indigo-500/20",
-          icon: <Layers className="w-4 h-4 text-indigo-600" />,
-          label: "Manual Review Required",
+          bg: "bg-slate-100 text-slate-800 border-slate-300 ring-1 ring-slate-500/20",
+          icon: <XCircle className="w-4 h-4 text-slate-600" />,
+          label: "Rejected - Dispute Transmitted",
         };
     }
   };

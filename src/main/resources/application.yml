@@ -1,5 +1,8 @@
 server:
   port: ${SERVER_PORT:8080}
+logging:
+  file:
+    name: backend.log
 spring:
   application:
     name: Automated-Invoice-Reconciliation
@@ -7,6 +10,11 @@ spring:
     virtual:
       enabled: true
   ai:
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 500ms
+        max-interval: 1500ms
     openai:
       base-url: ${AI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai/}
       api-key: ${GEMINI_API_KEY:${AI_API_KEY:${OPENAI_API_KEY:mock-key}}}

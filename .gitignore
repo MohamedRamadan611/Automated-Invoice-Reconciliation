@@ -36,9 +36,11 @@ build/
 
 ### Application uploads ###
 uploads/
+*.log
 
 ### Environment Variables & Secrets ###
 .env
 .env.*
 !.env.example
+
 

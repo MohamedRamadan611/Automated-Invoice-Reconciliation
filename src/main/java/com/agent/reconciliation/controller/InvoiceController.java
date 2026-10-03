@@ -11,6 +11,7 @@ import com.agent.reconciliation.repository.PurchaseOrderRepository;
 import com.agent.reconciliation.service.DisputeDraftingService;
 import com.agent.reconciliation.service.EmailNotificationService;
 import com.agent.reconciliation.service.FileStorageService;
+import com.agent.reconciliation.service.HmacTokenService;
 import com.agent.reconciliation.service.InvoiceExtractionService;
 import com.agent.reconciliation.service.ReconciliationEngineService;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -50,6 +51,7 @@ public class InvoiceController {
     private final ReconciliationEngineService reconciliationEngineService;
     private final EmailNotificationService emailNotificationService;
     private final DisputeDraftingService disputeDraftingService;
+    private final HmacTokenService hmacTokenService;
     private final ObjectMapper objectMapper;
 
     public InvoiceController(InvoiceRepository invoiceRepository,
@@ -59,6 +61,7 @@ public class InvoiceController {
                              ReconciliationEngineService reconciliationEngineService,
                              EmailNotificationService emailNotificationService,
                              DisputeDraftingService disputeDraftingService,
+                             HmacTokenService hmacTokenService,
                              ObjectMapper objectMapper) {
         this.invoiceRepository = invoiceRepository;
         this.purchaseOrderRepository = purchaseOrderRepository;
@@ -67,6 +70,7 @@ public class InvoiceController {
         this.reconciliationEngineService = reconciliationEngineService;
         this.emailNotificationService = emailNotificationService;
         this.disputeDraftingService = disputeDraftingService;
+        this.hmacTokenService = hmacTokenService;
         this.objectMapper = objectMapper;
     }
 
@@ -77,23 +81,22 @@ public class InvoiceController {
     public ResponseEntity<ReconciliationSummaryResponse> uploadInvoice(@RequestParam("file") MultipartFile file) {
         log.info("Received invoice upload request: {} ({} bytes)", file.getOriginalFilename(), file.getSize());
 
+        // Reject empty or zero-byte file uploads immediately (EXT-006)
+        if (file.isEmpty() || file.getSize() == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Uploaded file is empty or has zero bytes.");
+        }
+
         // 1. Store file locally
         String filePath = fileStorageService.storeFile(file);
 
-        // 2. Multimodal LLM Extraction (with resilient fallback)
+        // 2. Multimodal LLM Extraction (with proper error propagation)
         ExtractedInvoice extracted;
         try {
             extracted = extractionService.extractInvoice(file);
         } catch (Exception ex) {
-            log.warn("Invoice extraction threw unexpected exception: {}. Using resilient extraction.", ex.getMessage());
-            extracted = new ExtractedInvoice(
-                    "INV-" + (System.currentTimeMillis() % 10000),
-                    "PO-2026-001",
-                    "Supplier",
-                    List.of(),
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO
-            );
+            log.error("Invoice extraction failed for '{}': {}", file.getOriginalFilename(), ex.getMessage());
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Failed to extract invoice data from uploaded document: " + ex.getMessage());
         }
 
         // 3. Serialize extracted raw JSON payload
@@ -118,6 +121,7 @@ public class InvoiceController {
      */
     @GetMapping
     public ResponseEntity<List<InvoiceListItemResponse>> getAllInvoices() {
+        log.info("--> [GET /api/invoices] Listing all processed invoices");
         List<Invoice> invoices = invoiceRepository.findAllWithAudits();
         List<InvoiceListItemResponse> list = invoices.stream()
                 .map(i -> new InvoiceListItemResponse(
@@ -140,6 +144,7 @@ public class InvoiceController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<ReconciliationSummaryResponse> getInvoiceById(@PathVariable("id") Long id) {
+        log.info("--> [GET /api/invoices/{}] Fetching detailed breakdown and audits", id);
         Invoice invoice = invoiceRepository.findWithAuditsById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
 
@@ -151,8 +156,10 @@ public class InvoiceController {
      */
     @GetMapping("/{id}/file")
     public ResponseEntity<Resource> getInvoiceFile(@PathVariable("id") Long id) {
+        log.info("--> [GET /api/invoices/{}/file] Streaming document binary for split-screen preview", id);
         Invoice invoice = invoiceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
+
 
         Resource resource = fileStorageService.loadFileAsResource(invoice.getFilePath());
 
@@ -279,5 +286,43 @@ public class InvoiceController {
             Invoice saved = invoiceRepository.save(invoice);
             return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
         }
+    }
+
+    /**
+     * Secure one-click manager override endpoint using HMAC-SHA256 signed tokens.
+     * Valid tokens transition invoice from FLAGGED_DISCREPANCY to APPROVED.
+     * Tampered tokens return HTTP 403 Forbidden; expired tokens return HTTP 400 Bad Request.
+     */
+    @GetMapping("/override-approve")
+    public ResponseEntity<ReconciliationSummaryResponse> overrideApproveInvoice(
+            @RequestParam("token") String token,
+            @RequestParam(value = "notes", required = false) String notes) {
+        log.info("Received HMAC override-approve request.");
+
+        HmacTokenService.TokenVerificationResult verification = hmacTokenService.verifyToken(token);
+
+        if (!verification.valid()) {
+            if (verification.expired()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Override token has expired. Please request a new approval link.");
+            }
+            if (verification.tampered()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Invalid or tampered override token. Access denied.");
+            }
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, verification.message());
+        }
+
+        Long invoiceId = verification.invoiceId();
+        Invoice invoice = invoiceRepository.findWithAuditsById(invoiceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Invoice not found with id: " + invoiceId));
+
+        invoice.setReconciliationStatus(ReconciliationStatus.APPROVED);
+        Invoice saved = invoiceRepository.save(invoice);
+        log.info("Invoice {} approved via HMAC override. Notes: {}", invoiceId,
+                notes != null ? notes : "[none]");
+
+        return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
     }
 }

@@ -206,3 +206,47 @@ Route (app)
 ### 3. Multi-Industry Verification Artifacts
 - **Technology Invoice PDF Fixture:** Generated via `python3 scripts/generate_electronics_invoice_pdf.py` (`sample_invoice_tech.pdf`, referencing `PO-2026-003`).
 - **Agricultural Invoice PDF Fixture:** `scripts/generate_valid_invoice_pdf.py` (`sample_invoice_mismatch.pdf`, referencing `PO-2026-001`).
+
+---
+
+## Operational Fixes: Email Dispatch, Dispute Draft Repair & AI Regeneration
+
+### 1. Live Gmail SMTP Dispatch on Approval
+- **Root Cause:** In `.env`, `SPRING_MAIL_PASSWORD=agmr teet dbue hnqk` was unquoted. Shell word-splitting truncated the password to `agmr` (`teet: command not found`). This caused Gmail SMTP `535 5.7.8` authentication rejection and simulation fallback.
+- **Resolution:**
+  - Wrapped `SPRING_MAIL_PASSWORD="agmr teet dbue hnqk"` in `.env`.
+  - Updated `AutomatedInvoiceReconciliationApplication.java` to strip quotes and enforce `.env` credentials in `loadDotEnv()`.
+  - Verified live delivery:
+    ```
+    INFO c.a.r.service.EmailNotificationService : Successfully sent live email [MANAGER APPROVAL & PAYMENT SIGN-OFF] to mohamed.ramadan97116@gmail.com
+    ```
+
+### 2. Invoices 3 to 7 Dispute Drafts Repaired in MySQL
+- **Root Cause:** Invoices 3 through 7 in MySQL had `NULL` in `dispute_draft_arabic` and `dispute_draft_english`, and legacy question marks (`### ????? ?????...`) in `dispute_draft` due to client Latin-1 encoding during earlier seeding.
+- **Resolution:**
+  - Executed [repair_dispute_drafts.py](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/scripts/repair_dispute_drafts.py) with explicit `utf8mb4` encoding.
+  - Set 100% clean, verified, isolated Arabic and English drafts across invoices 3, 4, 5, 6, and 7.
+  - Verified with zero question marks: Arabic tab is 100% Arabic, English tab is 100% English, and Bilingual displays both without cross-contamination.
+
+### 3. AI Dispute Regeneration Fixed (Zero 500 / Broken Pipe)
+- **Root Cause:** Next.js proxy rewrite timeout triggered `ECONNRESET` / `Broken pipe` during transient Gemini 503 spikes because Spring AI's default retry template waited 45+ seconds.
+- **Resolution:**
+  - Configured bounded Spring AI retry in `application.yml` (`max-attempts: 2`, `backoff.initial-interval: 500ms`, `max-interval: 1500ms`).
+  - Created `frontend/.env.local` setting `NEXT_PUBLIC_API_URL=http://localhost:8080` so client-side API requests communicate directly with Spring Boot, completely eliminating Next.js proxy rewrite timeouts.
+  - Added client disconnect (`Broken pipe` / `AsyncRequestNotUsableException`) suppression in `GlobalExceptionHandler.java`.
+  - Added `useEffect` in `SplitScreenViewer.tsx` to synchronize `invoice` state on update.
+  - Live tested: `POST /api/invoices/7/generate-dispute` returned `200 OK` with fresh drafts and zero errors.
+
+---
+
+## Quality Assurance & Automated Test Suite
+
+For the exhaustive quality audit, test matrix, and verification outcomes across all 63 automated tests, consult the project QA report:
+- **Comprehensive QA Report:** [.project-phases/qa_test_execution_report.md](file:///Users/mohamed.abdelfatah/Mohamed-Ramadan/Automated-Invoice-Reconciliation/.project-phases/qa_test_execution_report.md)
+  - 63/63 passing tests across 6 specialized QA suites and unit test suites
+  - Verification of pure Java `BigDecimal` arithmetic invariance (`FIN-008`)
+  - Cryptographic HMAC-SHA256 manager payment override validation (`MAIL-005`, `MAIL-006`)
+  - Zero-fallback multimodal document extraction handling (`EXT-006`)
+  - Next.js 16 production build verification (0 TypeScript errors)
+
+

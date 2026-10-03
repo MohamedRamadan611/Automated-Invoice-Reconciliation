@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 /**
@@ -222,6 +223,36 @@ public class ReconciliationEngineService {
             audit.setExplanation(DisputeReasonHelper.getBilingualExplanation(audit));
 
             invoice.addAudit(audit);
+        }
+
+        // Step C2: Header Grand Total vs Line Item Sum Arithmetic Check (FIN-008)
+        BigDecimal lineItemsSum = BigDecimal.ZERO;
+        if (extracted.items() != null) {
+            for (ExtractedLineItem item : extracted.items()) {
+                BigDecimal itemTotal = item.lineTotal() != null ? item.lineTotal() :
+                        (item.unitPrice() != null && item.quantity() != null
+                                ? item.unitPrice().multiply(item.quantity()) : BigDecimal.ZERO);
+                lineItemsSum = lineItemsSum.add(itemTotal);
+            }
+        }
+        BigDecimal calculatedGrandTotal = lineItemsSum.add(
+                extracted.extraFees() != null ? extracted.extraFees() : BigDecimal.ZERO);
+        BigDecimal headerTotal = extracted.grandTotal() != null ? extracted.grandTotal() : BigDecimal.ZERO;
+        if (headerTotal.subtract(calculatedGrandTotal).abs().compareTo(new BigDecimal("0.01")) > 0) {
+            log.info("Header total mismatch detected: header={}, calculated={}", headerTotal, calculatedGrandTotal);
+            ReconciliationAudit sumAudit = ReconciliationAudit.builder()
+                    .issueType(IssueType.EXTRA_FEE)
+                    .skuCode("HEADER_SUM_MISMATCH")
+                    .itemDescription("Header Total vs Line Items Sum Arithmetic Discrepancy")
+                    .expectedValue(calculatedGrandTotal.setScale(2, RoundingMode.HALF_UP))
+                    .actualValue(headerTotal.setScale(2, RoundingMode.HALF_UP))
+                    .build();
+            sumAudit.setExplanation(String.format(
+                    "فارق حسابي: إجمالي الفاتورة (%s ج.م) لا يطابق مجموع البنود والرسوم (%s ج.م) — " +
+                    "Header grand total (%s EGP) differs from itemized lines and fees sum (%s EGP).",
+                    headerTotal.toPlainString(), calculatedGrandTotal.toPlainString(),
+                    headerTotal.toPlainString(), calculatedGrandTotal.toPlainString()));
+            invoice.addAudit(sumAudit);
         }
 
         // Step D: Status Resolution
