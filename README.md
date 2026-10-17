@@ -3,17 +3,18 @@
 [![Java 21](https://img.shields.io/badge/Java-21%20LTS-ED8B00?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5.12-6DB33F?style=flat-square&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Spring AI](https://img.shields.io/badge/Spring%20AI-1.0.0--M6-6DB33F?style=flat-square)](https://spring.io/projects/spring-ai)
-[![Next.js 15](https://img.shields.io/badge/Next.js-15%20App%20Router-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16%20Turbopack-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![MySQL 8.4](https://img.shields.io/badge/MySQL-8.4%20LTS-4479A1?style=flat-square&logo=mysql&logoColor=white)](https://www.mysql.com/)
-[![Tests](https://img.shields.io/badge/Tests-63%2F63%20Passed%20(100%25)-emerald?style=flat-square&logo=junit5&logoColor=white)](#-testing--quality-assurance)
+[![Backend Tests](https://img.shields.io/badge/Backend%20Tests-84%2F84%20Passed%20(100%25)-emerald?style=flat-square&logo=junit5&logoColor=white)](#-testing--quality-assurance)
+[![Frontend Tests](https://img.shields.io/badge/Frontend%20Tests-19%20Vitest%20%2B%205%20Playwright-blue?style=flat-square&logo=vitest&logoColor=white)](#-testing--quality-assurance)
 
-An enterprise AI-augmented financial audit system that ingests supplier invoices (PDF and images), extracts unstructured bilingual line items, matches vendor commodities to internal Purchase Orders, enforces **100% deterministic mathematical verification in pure Java**, and flags discrepancies on a high-density Next.js 15 split-screen review dashboard.
+An enterprise AI-augmented financial audit and commercial settlement platform. It ingests supplier invoices (PDF and images), extracts unstructured bilingual line items, performs semantic discovery against Purchase Orders, enforces **100% deterministic mathematical verification in pure Java**, generates audit-certified **Debit Note (إشعار مدين) PDFs**, quantifies **capital leakage prevented for CFOs**, tracks **vendor reliability scorecards**, and provides an external **supplier self-service dispute settlement portal** secured by time-bounded HMAC-SHA256 magic tokens.
 
 The system is completely generic and industry-agnostic, handling invoices across technology, retail, manufacturing, logistics, pharmaceuticals, construction, and agriculture with zero hardcoded commodity fallbacks.
 
 ---
 
-## 🌟 Key Capabilities & Architectural Invariants
+## 🌟 Key Capabilities & Architectural Pillars
 
 ### 1. Invariant 1: Separation of Extraction vs. Math
 - **LLM Extracts Real Printed Data Only:** Multimodal document ingestion (PDF, PNG, JPEG) of supplier invoices using Google Gemini (`gemini-3.8-flash`) via Spring AI and Apache PDFBox 3.0.4 (raw text extraction + page vision rendering). Never computes sums, taxes, or variances.
@@ -27,32 +28,40 @@ The system is completely generic and industry-agnostic, handling invoices across
 - **Unrecognized Items (`SKU-005`):** Line items that cannot be matched to the PO are flagged as `UNRECOGNIZED_ITEM`.
 - **Header Sum Mismatch (`FIN-008`):** Compares invoiced grand total against $\sum(\text{lineItemTotal}) + \text{extraFees}$; flags discrepancy when arithmetic diverges by $> 0.01\text{ EGP}$.
 
-### 3. Generic SKU & Product Discovery
-- Matches invoice line items to PO items and database catalogs by canonical `skuCode` and generic normalized token similarity (handling diacritics, Eastern Arabic numerals `٠-٩`, and multi-industry items).
-- Zero hardcoded commodities; verified on laptops, steel beams, feta cheese, and agricultural produce.
+### 3. "Leakage Prevented" CFO ROI Dashboard & AI Executive Brief
+- **Executive Metric Stream (`/api/analytics/roi-summary`):** Real-time aggregation of total invoices audited, clean match rates, audit discrepancy volumes, and exact **Capital Leakage Prevented (EGP)**.
+- **Autonomous Gemini Executive Brief:** High-level narrative synthesis analyzing top leakage categories and financial risk exposure with dual-language formatting (English LTR on top; Arabic RTL below) in a unified executive card.
 
-### 4. Strict Bilingual Dispute Isolation & Machine Delimiters
-- Gemini prompt outputs are strictly bounded with machine-readable delimiters (`<<<ARABIC_START>>>...<<<ARABIC_END>>>` and `<<<ENGLISH_START>>>...<<<ENGLISH_END>>>`).
+### 4. Vendor Reliability Scorecard & AI Risk Dossiers
+- **Vendor Risk Indexing (`/vendors`):** Analyzes historical invoice accuracy, overcharge volume, and clean match rates to compute a 0–100% Reliability Score.
+- **Automated Tier Classification:**
+  - 🟢 **Tier 1 (Trusted):** Reliability $\ge 90\%$ (Eligible for straight-through processing).
+  - 🟡 **Tier 2 (Moderate):** Reliability $75\% - 89\%$ (Standard reconciliation audit).
+  - 🔴 **Tier 3 (High Risk):** Reliability $< 75\%$ (Mandatory manager sign-off).
+- **Gemini Qualitative Risk Analysis:** Generates commercial leverage points and negotiation tactics tailored to supplier billing history.
+
+### 5. Official Commercial Debit Note (إشعار مدين) PDF Engine
+- **Audit-Certified PDF Generation (`/api/invoices/{id}/debit-note`):** High-resolution, printable bilingual debit note generated via Apache PDFBox 3.0.4.
+- **Ledger Compliance:** Features official corporate header, reference stamping, itemized variance schedule (SKU, Agreed Rate, Billed Rate, Variance, Deduction), certified seal, and authorized signature lines.
+
+### 6. Secure Supplier Dispute Settlement Portal
+- **HMAC-SHA256 Magic Token Security (`/portal/dispute?token=...`):** 7-day time-bounded, tamper-proof supplier access link requiring zero supplier login or account creation.
+- **Itemized Variance Table with Master-Detail UX:**
+  - Locked column layout (`table-fixed` + `<colgroup>`) preventing any horizontal column jittering when expanding or collapsing rows.
+  - Symmetrical edge insets (`pl-6 pr-4` on SKU column; `pl-4 pr-6 sm:pr-8` on action column) ensuring action buttons never touch table boundary lines.
+  - Expandable Master-Detail sub-rows rendering side-by-side English (LTR) and Arabic (RTL) cards with fallback synthesis ensuring formal Arabic explanations are present across all screens.
+  - Global `Expand All Notes / Collapse All Notes` toggle button.
+  - Clean empty state for approved invoices with zero audit variances.
+- **Autonomous Supplier Resolution Options (Available on Flagged & Rejected Invoices):**
+  - **Option 1: Accept Deductions & Release Payment:** Instantly finalizes deduction, transitions invoice to `RESOLVED_BY_DEBIT_NOTE`, stamps Debit Note PDF, and schedules net approved balance for immediate disbursement.
+  - **Option 2: Counter-Explanation with AI Negotiator:** Gemini AI evaluates supplier justifications against commercial standards in real time.
+  - **Option 3: Upload Amended Invoice:** Suppliers upload corrected invoices (PDF/Image) to trigger autonomous re-reconciliation against original PO terms.
+
+### 7. Bilingual Dispute Isolation & Commercial Email Engine
+- **Strict Machine Delimiters:** Gemini outputs strictly bounded by `<<<ARABIC_START>>>...<<<ARABIC_END>>>` and `<<<ENGLISH_START>>>...<<<ENGLISH_END>>>`.
 - **100% Language Isolation:** Arabic tab contains zero Latin script; English tab contains zero Arabic script.
-- **100% Parity:** Bilingual combined tab matches isolated tabs verbatim.
-- Persisted in separate database columns (`dispute_draft_arabic`, `dispute_draft_english`).
-
-### 5. Decoupled Persistence & Network LLM Calls
-- Invoices and deterministic audit results are committed to MySQL immediately.
-- External Gemini AI dispute generation executes outside the database transaction, preventing connection pool starvation.
-
-### 6. Commercial Email Engine & HMAC-SHA256 Manager Override
-- Modular HTML email templates in `src/main/resources/mail/` with live Gmail SMTP dispatch or safe console simulation fallback (`X-Email-Simulated: true`).
-- Secure one-click manager payment override links powered by `HmacTokenService` (`/api/invoices/override-approve?token=...`), featuring constant-time signature verification, configurable expiration (default 24h), and replay protection.
-
-### 7. Next.js 15 Split-Screen Auditor Workspace
-- Server/Client component boundary optimization (`DashboardClient.tsx` & `InvoiceWorkspaceClient.tsx`).
-- 50/50 responsive split: fit-width PDF streaming (`#view=FitH`) on the left; structured audit findings with clean two-line Arabic/English explanations on the right.
-- Unified status badge tokens:
-  - 🟢 **`APPROVED`**: Emerald
-  - 🔴 **`FLAGGED_DISCREPANCY`**: Rose
-  - 🟡 **`MANUAL_REVIEW`**: Amber
-  - ⚫ **`REJECTED`**: Slate
+- **Modular Email Dispatch:** In `src/main/resources/mail/` with live Gmail SMTP dispatch or safe console simulation fallback (`X-Email-Simulated: true`).
+- **Manager One-Click Override:** Secure signed URL (`/api/invoices/override-approve?token=...`) allowing emergency payment authorization.
 
 ---
 
@@ -61,15 +70,16 @@ The system is completely generic and industry-agnostic, handling invoices across
 | Layer | Technologies |
 | :--- | :--- |
 | **Backend Runtime** | Java 21 (LTS) |
-| **Framework** | Spring Boot 3.5.12, Spring Data JPA / Hibernate |
-| **Document Ingestion** | Apache PDFBox 3.0.4 (Text Extraction & Page-to-Image Vision Rendering) |
+| **Framework** | Spring Boot 3.5.12, Spring Data JPA / Hibernate 6.6 |
+| **Document Processing** | Apache PDFBox 3.0.4 (Text Extraction, Vision Page Rendering, Debit Note PDF Generation) |
 | **AI Orchestration** | Spring AI 1.0.0-M6 (Google Gemini `gemini-3.8-flash`) |
-| **Security & Signing** | HMAC-SHA256 (`HmacTokenService`) with constant-time byte comparison |
+| **Security & Cryptography** | HMAC-SHA256 (`HmacTokenService`) with constant-time byte comparison |
 | **Database** | MySQL 8.4 LTS (Dockerized on port `3307`) |
 | **Email Dispatch** | Spring Boot Starter Mail (JavaMailSender / Gmail SMTP) |
-| **Frontend Framework** | Next.js 15 / 16 (App Router, Turbopack, React 19) |
-| **Styling & Icons** | Tailwind CSS v4, Lucide React |
-| **Containerization** | Docker Compose |
+| **Frontend Framework** | Next.js 16 (App Router, Turbopack, React 19) |
+| **Styling & Components** | Vanilla CSS, Tailwind CSS v4, Lucide React |
+| **Testing Frameworks** | JUnit 5, Mockito, MockMvc, Vitest, React Testing Library, Playwright E2E |
+| **Containerization** | Docker & Docker Compose |
 
 ---
 
@@ -78,80 +88,86 @@ The system is completely generic and industry-agnostic, handling invoices across
 ```
 Automated-Invoice-Reconciliation/
 ├── .project-phases/
-│   ├── Commercial_Features_Implementation_Plan.md # 5-sprint commercial roadmap (ROI, Debit Notes, ERP Sync)
-│   ├── qa_test_execution_report.md               # Complete QA audit report (63/63 passing tests)
-│   └── walkthrough.md                            # Comprehensive project walkthrough & operational fixes
+│   ├── Commercial_Features_Implementation_Plan.md # 5-sprint commercial roadmap
+│   ├── qa_test_execution_report.md               # QA audit report
+│   └── walkthrough.md                            # Comprehensive project walkthrough
 ├── docker-compose.yml                            # MySQL 8.4 LTS service (port 3307)
-├── pom.xml                                       # Maven dependencies & Surefire configuration
-├── scripts/
-│   ├── generate_valid_invoice_pdf.py             # Agricultural commodity invoice generator
-│   ├── generate_electronics_invoice_pdf.py       # Technology & electronics invoice generator
-│   └── repair_dispute_drafts.py                  # Database dispute draft utf8mb4 repair script
+├── pom.xml                                       # Maven dependencies & test plugins
 ├── src/main/
 │   ├── java/com/agent/reconciliation/
 │   │   ├── config/
 │   │   │   └── AppProperties.java                # Type-safe @ConfigurationProperties(prefix = "app")
 │   │   ├── controller/
-│   │   │   └── InvoiceController.java            # REST endpoints (/api/invoices, /override-approve)
+│   │   │   ├── InvoiceController.java            # Invoices, approvals, rejects, overrides, Debit Note PDF
+│   │   │   ├── AnalyticsController.java          # CFO ROI metrics & AI Executive Brief (/api/analytics)
+│   │   │   ├── VendorController.java             # Vendor reliability scorecards (/api/vendors)
+│   │   │   └── SupplierPortalController.java     # Secure supplier dispute portal (/api/portal/dispute)
 │   │   ├── domain/
-│   │   │   ├── dto/                              # Immutable Java Records (ExtractedInvoice, Audits)
+│   │   │   ├── dto/                              # Immutable DTO records (Extraction, ROI, Portal, Scorecard)
 │   │   │   ├── entity/                           # JPA Entities (PurchaseOrder, Invoice, ReconciliationAudit)
-│   │   │   └── enums/                            # ReconciliationStatus, IssueType, PoStatus
-│   │   ├── exception/
-│   │   │   └── GlobalExceptionHandler.java       # RFC-7807 problem details & client disconnect handler
+│   │   │   └── enums/                            # ReconciliationStatus, IssueType, PoStatus, VendorTier
 │   │   ├── repository/                           # Spring Data JPA repositories
-│   │   └── service/
-│   │       ├── DisputeDraftingService.java       # Gemini LLM dispute generator with strict delimiter parsing
-│   │       ├── EmailNotificationService.java     # Pure SMTP MIME message dispatcher
-│   │       ├── EmailTemplateService.java         # Template engine for external HTML/CSS
-│   │       ├── FileStorageService.java           # Local disk storage & PDF streaming
-│   │       ├── HmacTokenService.java             # HMAC-SHA256 signed approval tokens
-│   │       ├── InvoiceExtractionService.java     # PDFBox text extraction + Gemini Flash vision
-│   │       └── ReconciliationEngineService.java  # Deterministic Java audit engine (FIN-008 header sum check)
+│   │   ├── service/
+│   │   │   ├── ReconciliationEngineService.java  # Deterministic Java audit engine (FIN-001 - FIN-008)
+│   │   │   ├── FinancialAnalyticsService.java    # Capital leakage & ROI aggregation
+│   │   │   ├── VendorScorecardService.java       # Reliability scoring & AI risk dossier generation
+│   │   │   ├── DebitNoteGeneratorService.java    # Apache PDFBox Debit Note PDF generator
+│   │   │   ├── DisputeDraftingService.java       # Gemini LLM bilingual dispute drafter
+│   │   │   ├── HmacTokenService.java             # HMAC-SHA256 token generator & validator
+│   │   │   ├── InvoiceExtractionService.java     # PDFBox text extraction + Gemini Flash vision
+│   │   │   └── EmailNotificationService.java     # SMTP MIME message dispatcher
+│   │   └── util/
+│   │       └── DisputeReasonHelper.java          # Canonical Arabic & English audit reason formatter
 │   └── resources/
 │       ├── application.yml                       # DB, Mail, App, and Spring AI configuration
-│       ├── data.sql                              # Multi-industry seed POs (commodities, dairy, tech, industrial)
-│       ├── mail/                                 # External HTML Email Templates
-│       │   ├── vendor-dispute.html               # Vendor dispute notice layout
-│       │   ├── manager-approval.html             # Manager sign-off receipt layout
-│       │   ├── manager-alert.html                # High-priority manager alert layout
-│       │   └── components/                       # 27 modular atomic HTML components
+│       ├── data.sql                              # Multi-industry seed POs (commodities, tech, industrial)
+│       ├── mail/                                 # HTML email layouts & components
 │       └── prompts/                              # External StringTemplate (.st) Prompts
-│           ├── gemini-extraction.st              # Industry-agnostic multimodal extraction prompt
-│           ├── gemini-dispute.st                 # Dispute letter prompt template with machine delimiters
-│           └── gemini-dispute-system.st          # Commercial mediator persona instructions
+│           ├── gemini-extraction.st              # Multimodal invoice extraction prompt
+│           ├── gemini-dispute.st                 # Bilingual dispute letter prompt
+│           ├── gemini-executive-brief.st         # Autonomous executive summary prompt
+│           ├── gemini-vendor-risk.st             # Vendor risk assessment prompt
+│           └── gemini-portal-negotiation.st      # Supplier dispute negotiation prompt
 ├── src/test/java/com/agent/reconciliation/
-│   ├── suite/                                    # Exhaustive QA test suites (44 tests)
-│   │   ├── FinancialReconciliationTestSuite.java # FIN-001 through FIN-008
-│   │   ├── MultimodalExtractionTestSuite.java    # EXT-001 through EXT-007
-│   │   ├── SemanticSkuMappingTestSuite.java      # SKU-001 through SKU-006
-│   │   ├── BilingualDisputeDraftingTestSuite.java# DISP-001 through DISP-009
-│   │   ├── EmailAndPaymentOverrideTestSuite.java # MAIL-001 through MAIL-006
-│   │   └── SecurityAndEdgeCasesTestSuite.java    # SEC-001 through SEC-007
-│   ├── controller/InvoiceControllerTest.java     # Controller slice tests
-│   └── service/                                  # Unit tests (Engine, Extraction, Storage)
-└── frontend/                                     # Next.js 15 Auditor Workspace
-    ├── next.config.ts                            # Backend proxy rewrite (/api/:path*)
+│   ├── controller/                               # MockMvc REST controller tests (84 total tests)
+│   │   ├── InvoiceControllerTest.java
+│   │   ├── AnalyticsControllerTest.java
+│   │   ├── VendorControllerTest.java
+│   │   └── SupplierPortalControllerTest.java
+│   ├── service/                                  # Unit tests (Engine, Analytics, DebitNote, HMAC, Scorecard)
+│   └── suite/                                    # Exhaustive QA test suites (FIN, EXT, SKU, DISP, MAIL, SEC)
+└── frontend/                                     # Next.js 16 Auditor & Supplier Workspace
+    ├── playwright.config.ts                      # Playwright E2E configuration
+    ├── vitest.config.ts                          # Vitest component test configuration
+    ├── e2e/                                      # Playwright browser journeys (5 spec suites)
+    │   ├── roi-dashboard.spec.ts
+    │   ├── vendor-scorecard.spec.ts
+    │   └── supplier-portal.spec.ts
     └── src/
         ├── app/
-        │   ├── layout.tsx                        # Root layout & typography
-        │   ├── page.tsx                          # Server component -> DashboardClient
-        │   └── invoice/[id]/page.tsx             # Server component -> InvoiceWorkspaceClient
+        │   ├── page.tsx                          # CFO ROI Dashboard & Invoices Queue
+        │   ├── vendors/page.tsx                  # Vendor Reliability Scorecards
+        │   ├── invoice/[id]/page.tsx             # 50/50 Split-Screen Auditor Workspace
+        │   └── portal/dispute/page.tsx           # Supplier Dispute Settlement Portal
         ├── components/
-        │   ├── DashboardClient.tsx               # Metrics cards, queue table, search/filters
-        │   ├── DisputeActionDrawer.tsx           # Isolated dispute tabs (Arabic, English, Bilingual)
-        │   ├── DocumentViewer.tsx                # Fit-width PDF preview (#view=FitH)
-        │   ├── DropzoneUploader.tsx              # Drag & drop upload zone
-        │   ├── InvoiceWorkspaceClient.tsx        # Workspace container
-        │   └── SplitScreenViewer.tsx             # 50/50 split container & clean 2-line findings
+        │   ├── DashboardClient.tsx               # Hero KPI banner, AI Executive Brief, invoices table
+        │   ├── VendorScorecardClient.tsx         # Scorecard table, risk filters, AI dossier drawer
+        │   ├── SupplierPortalClient.tsx          # Master-detail variance table, Debit Note, resolution tabs
+        │   ├── SplitScreenViewer.tsx             # Fit-width PDF viewer + audit findings
+        │   └── DisputeActionDrawer.tsx           # Bilingual dispute letters & Debit Note download link
+        ├── __tests__/                            # Vitest component tests (19 tests)
+        │   ├── DashboardRoiMetrics.test.tsx
+        │   ├── VendorScorecard.test.tsx
+        │   ├── SupplierPortal.test.tsx
+        │   └── DisputeActionDrawer.test.tsx
         └── lib/
-            ├── api.ts                            # Centralized typed HTTP API client
+            ├── api.ts                            # Typed HTTP client
             └── types.ts                          # TypeScript interfaces mirroring Java DTOs
 ```
 
 ---
 
-## 🗄️ Domain Entities & Database Schema
+## 🗄️ Database Schema & Reconciliation Statuses
 
 ```
  purchase_orders                      invoices
@@ -162,85 +178,88 @@ Automated-Invoice-Reconciliation/
 | status             |               | invoiced_total              |
 | expected_total     |               | reconciliation_status       |
 +--------------------+               | file_path                   |
-          | 1                        | dispute_draft               |
-          |                          | dispute_draft_arabic        |
-          | *                        | dispute_draft_english       |
- purchase_order_items                +-----------------------------+
-+--------------------+                              | 1
-| id (PK)            |                              |
-| po_id (FK)         |               reconciliation_audits
-| sku_code           |              +-----------------------------+
-| expected_quantity  |              | id (PK)                     |
-| agreed_unit_price  |              | invoice_id (FK)             |
-+--------------------+              | issue_type                  |
-                                    | expected_value              |
+          | 1                        | dispute_draft_arabic        |
+          |                          | dispute_draft_english       |
+          | *                        +-----------------------------+
+ purchase_order_items                               | 1
++--------------------+                              |
+| id (PK)            |               reconciliation_audits
+| po_id (FK)         |              +-----------------------------+
+| sku_code           |              | id (PK)                     |
+| expected_quantity  |              | invoice_id (FK)             |
+| agreed_unit_price  |              | issue_type                  |
++--------------------+              | expected_value              |
                                     | actual_value                |
                                     | explanation                 |
                                     +-----------------------------+
 ```
 
+### Reconciliation Status Hierarchy
+- 🟢 `APPROVED`: Clean match or auditor override authorized.
+- 🔵 `RESOLVED_BY_DEBIT_NOTE`: Settled via accepted deduction & official Debit Note.
+- 🔴 `FLAGGED_DISCREPANCY`: Discrepancies detected; awaiting auditor or supplier resolution.
+- ⚫ `REJECTED`: Formal dispute dispatched to vendor; payment blocked.
+- 🟡 `MANUAL_REVIEW`: PO reference missing; manual investigation required.
+
 ### Discrepancy Issue Types
 - `PRICE_MISMATCH`: Invoiced unit price exceeds agreed PO unit price.
 - `QUANTITY_MISMATCH`: Billed quantity/weight differs from ordered PO quantity.
-- `EXTRA_FEE`: Unapproved delivery, freight, or surcharge (`مشال / توصيل`), or header grand total arithmetic mismatch (`HEADER_SUM_MISMATCH`).
-- `UNRECOGNIZED_ITEM`: Line item printed on invoice cannot be mapped to the PO.
+- `EXTRA_FEE`: Unapproved freight, porterage, or surcharge (`مشال / توصيل`), or arithmetic mismatch (`HEADER_SUM_MISMATCH`).
+- `UNRECOGNIZED_ITEM`: Line item on invoice cannot be matched to PO.
 - `PO_NOT_FOUND`: Purchase order reference not found in database.
-
-### Reconciliation Status Hierarchy
-- 🔴 `FLAGGED_DISCREPANCY`: Discrepancies detected; awaiting auditor review.
-- ⚫ `REJECTED`: Formal dispute dispatched to vendor; payment blocked.
-- 🟢 `APPROVED`: Clean match or auditor override authorized.
-- 🟡 `MANUAL_REVIEW`: PO reference missing; manual investigation required.
 
 ---
 
-## 🌐 REST API Specifications
+## 🌐 Complete REST API Specifications
 
-| Method | Endpoint | Description | Request / Query Params |
+| Method | Endpoint | Description | Query / Body Params |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/invoices/upload` | Ingests invoice, extracts data via PDFBox & Gemini, and reconciles against PO. | Multipart `file` (PDF/Image) |
+| `POST` | `/api/invoices/upload` | Ingests invoice, extracts data via PDFBox & Gemini, executes deterministic audit. | Multipart `file` |
 | `GET` | `/api/invoices` | Lists all processed invoices for the queue dashboard. | None |
-| `GET` | `/api/invoices/{id}` | Fetches detailed invoice audit breakdown and isolated dispute drafts. | Path: `id` |
+| `GET` | `/api/invoices/{id}` | Fetches detailed invoice audit breakdown and dispute drafts. | Path: `id` |
 | `GET` | `/api/invoices/{id}/file` | Streams raw binary document for inline browser preview. | Path: `id` |
+| `GET` | `/api/invoices/{id}/debit-note` | Generates official audit-certified Debit Note PDF (Apache PDFBox). | Path: `id` |
 | `POST` | `/api/invoices/{id}/generate-dispute` | Regenerates dispute letters dynamically via Gemini AI. | Path: `id` |
 | `POST` | `/api/invoices/{id}/approve` | Manually approves invoice and sends manager sign-off receipt. | Query: `email`, `notes` |
 | `POST` | `/api/invoices/{id}/reject` | Rejects invoice and sends formal dispute letter to vendor. | Query: `email`, `lang` |
 | `GET` | `/api/invoices/override-approve` | One-click direct manager approval via signed HMAC-SHA256 token. | Query: `token`, `notes` |
+| `GET` | `/api/analytics/roi-summary` | Aggregates CFO ROI metrics (leakage prevented, AI brief, category breakdown). | None |
+| `GET` | `/api/vendors/scorecard` | Lists reliability metrics and risk tier classification for all vendors. | None |
+| `GET` | `/api/vendors/{vendorName}/scorecard` | Fetches vendor scorecard with Gemini qualitative risk dossier. | Path: `vendorName` |
+| `GET` | `/api/portal/dispute` | Validates HMAC token and returns restricted supplier dispute portal view. | Query: `token` |
+| `POST` | `/api/portal/dispute/accept` | Supplier accepts deduction; transitions to `RESOLVED_BY_DEBIT_NOTE`. | Query: `token` |
+| `POST` | `/api/portal/dispute/explain` | Supplier submits counter-justification; evaluated by AI Negotiator. | Query: `token`, JSON `{"explanation": "..."}` |
+| `POST` | `/api/portal/dispute/upload-amended` | Supplier uploads amended invoice; triggers autonomous re-reconciliation. | Query: `token`, Multipart `file` |
 
 ---
 
 ## 🧪 Testing & Quality Assurance
 
-The system is validated by an automated test suite comprising **63 tests** across 6 specialized QA suites and unit test layers:
+The system is guarded by a 4-tier testing pyramid with **108 total automated tests** passing at 100%:
 
 ```bash
-# Run all 63 automated tests
+# 1. Run all 84 Backend JUnit 5 tests
 ./mvnw clean test
 
-# Run specific QA suites:
-./mvnw test -Dtest=FinancialReconciliationTestSuite   # FIN-001 through FIN-008
-./mvnw test -Dtest=MultimodalExtractionTestSuite        # EXT-001 through EXT-007
-./mvnw test -Dtest=SemanticSkuMappingTestSuite          # SKU-001 through SKU-006
-./mvnw test -Dtest=BilingualDisputeDraftingTestSuite    # DISP-001 through DISP-009
-./mvnw test -Dtest=EmailAndPaymentOverrideTestSuite     # MAIL-001 through MAIL-006
-./mvnw test -Dtest=SecurityAndEdgeCasesTestSuite        # SEC-001 through SEC-007
+# 2. Run all 19 Frontend Vitest component tests
+npm --prefix frontend test -- --run
 
-# Validate Next.js frontend production build
+# 3. Run all 5 Full-Stack Playwright E2E browser tests
+npm --prefix frontend run test:e2e
+
+# 4. Validate Next.js production build with Turbopack
 npm --prefix frontend run build
 ```
 
-| Suite | Focus Areas | Tests | Result |
-| :--- | :--- | :---: | :---: |
-| **Suite 1: Financial Reconciliation** | Exact match, micro-variance (>0.01 EGP), rounding, over/under billing, unauthorized fees, header-vs-line sum mismatch | 9 | **PASS** |
-| **Suite 2: Multimodal Extraction** | PDFBox text stripping, raster vision rendering, Eastern Arabic numerals, empty (400) and corrupted (422) rejection | 6 | **PASS** |
-| **Suite 3: Semantic SKU Mapping** | Tashkeel diacritics, dairy, electronics, industrial steel, unrecognized commodities, missing PO handling | 6 | **PASS** |
-| **Suite 4: Dispute Drafting & Isolation** | 100% Arabic isolation (0% Latin), 100% English isolation (0% Arabic), machine delimiter bounding, sanitization | 9 | **PASS** |
-| **Suite 5: Email & Payment Override** | Manager approvals, vendor dispute dispatch, language filtering, SMTP fallback, HMAC token signing & expiry | 7 | **PASS** |
-| **Suite 6: Security & Edge Cases** | Prompt injection immunity, path traversal sanitization, XSS serialization safety, concurrent idempotency | 7 | **PASS** |
-| **Unit & Context Tests** | Controller slice tests, storage service, extraction service, application context | 19 | **PASS** |
-| **Total** | **End-to-End System Under Test** | **63** | **100% PASS** |
+### Test Suite Execution Summary
 
-Detailed audit log: [.project-phases/qa_test_execution_report.md](.project-phases/qa_test_execution_report.md).
+| Layer | Framework | Scope / Coverage | Tests | Status |
+| :--- | :--- | :--- | :---: | :---: |
+| **Backend Unit & Logic** | JUnit 5 + Mockito | Deterministic math, rounding tolerances, PDF Debit Note generation, HMAC token lifecycle, vendor scoring | 40 | **100% PASS** |
+| **Backend QA Suites** | Spring Boot + MySQL | `FIN-001` - `FIN-008`, `EXT-001` - `EXT-007`, `SKU-001` - `SKU-006`, `DISP-001` - `DISP-009`, `MAIL-001` - `MAIL-006`, `SEC-001` - `SEC-007` | 44 | **100% PASS** |
+| **Frontend Components** | Vitest + RTL | Hero KPI metrics, executive brief rendering, vendor scorecard filters, dispute action drawer, master-detail supplier portal | 19 | **100% PASS** |
+| **End-to-End User Journeys** | Playwright (Chromium) | Live browser navigation: `/` dashboard, `/vendors` scorecard search, and `/portal/dispute?token=...` supplier settlement loop | 5 | **100% PASS** |
+| **Total Automated Tests** | **Full System Under Test** | **Unit + Integration + Component + E2E** | **108** | **100% PASS** |
 
 ---
 
@@ -284,15 +303,16 @@ cd frontend
 npm install
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to access the auditor dashboard.
+Open [http://localhost:3000](http://localhost:3000) to access the auditor workspace, [http://localhost:3000/vendors](http://localhost:3000/vendors) for vendor scorecards, or open a generated magic link for the supplier portal.
 
 ---
 
-## 🗺️ Commercial Roadmap
+## 🗺️ Commercial Roadmap Progress
 
-For executive features and the upcoming product rollout, review [.project-phases/Commercial_Features_Implementation_Plan.md](.project-phases/Commercial_Features_Implementation_Plan.md):
-- **Sprint 1 (Fast ROI):** "Leakage Prevented" CFO ROI Dashboard & Vendor Reliability Scorecard.
-- **Sprint 2 (Resolution Loop):** Auto-Generated Debit Note (إشعار مدين) PDF & Supplier Self-Service Magic Link Portal.
-- **Sprint 3 (System of Record):** One-Click ERP Sync (Odoo & Universal CSV/UBL).
-- **Sprint 4 (Gold Standard):** Agentic 3-Way Matching (PO + GRN Goods Receipt Note + Invoice).
-- **Sprint 5 (MENA Dominance):** WhatsApp Invoice Ingestion & Real-Time AI Auto-Dispute.
+Tracked in [.project-phases/Commercial_Features_Implementation_Plan.md](.project-phases/Commercial_Features_Implementation_Plan.md):
+
+- ✅ **Sprint 1 (Fast ROI):** "Leakage Prevented" CFO ROI Dashboard, Autonomous Gemini Executive Brief & Vendor Reliability Scorecard. *(COMPLETED)*
+- ✅ **Sprint 2 (Resolution Loop):** Apache PDFBox Commercial Debit Note (إشعار مدين) PDF Engine & Supplier Self-Service Dispute Settlement Portal with 3 resolution options. *(COMPLETED)*
+- ⏳ **Sprint 3 (System of Record):** One-Click ERP Sync (Odoo REST Integration & Universal CSV/UBL Exports).
+- ⏳ **Sprint 4 (Gold Standard):** Agentic 3-Way Matching (PO + GRN Goods Receipt Note + Invoice).
+- ⏳ **Sprint 5 (MENA Dominance):** WhatsApp Invoice Ingestion & Real-Time Autonomous Dispute Bot.
