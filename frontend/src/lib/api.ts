@@ -1,6 +1,12 @@
 import type {
   InvoiceListItemResponse,
   ReconciliationSummaryResponse,
+  FinancialRoiSummaryResponse,
+  VendorScorecardResponse,
+  SupplierDisputePortalResponse,
+  PortalAcceptResponse,
+  NegotiationAssessmentResponse,
+  PortalLinkResponse,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -167,3 +173,111 @@ export async function regenerateDispute(
 export function getInvoiceFileUrl(id: string | number): string {
   return `${BASE_URL}/api/invoices/${id}/file`;
 }
+
+/**
+ * Fetches portfolio ROI summary, cash leakage prevented, and AI executive brief.
+ */
+export async function fetchRoiSummary(): Promise<FinancialRoiSummaryResponse> {
+  const res = await fetch(`${BASE_URL}/api/analytics/roi-summary`, {
+    cache: "no-store",
+  });
+  return handleResponse<FinancialRoiSummaryResponse>(res);
+}
+
+/**
+ * Fetches reliability scorecards for all suppliers.
+ */
+export async function fetchVendorScorecards(): Promise<VendorScorecardResponse[]> {
+  const res = await fetch(`${BASE_URL}/api/vendors/scorecard`, {
+    cache: "no-store",
+  });
+  return handleResponse<VendorScorecardResponse[]>(res);
+}
+
+/**
+ * Fetches the reliability scorecard for a single supplier.
+ */
+export async function fetchVendorScorecard(
+  vendorName: string
+): Promise<VendorScorecardResponse> {
+  const encoded = encodeURIComponent(vendorName.trim());
+  const res = await fetch(`${BASE_URL}/api/vendors/${encoded}/scorecard`, {
+    cache: "no-store",
+  });
+  return handleResponse<VendorScorecardResponse>(res);
+}
+
+/**
+ * Returns direct URL for downloading the Debit Note PDF for an invoice.
+ */
+export function getDebitNoteUrl(invoiceId: string | number): string {
+  return `${BASE_URL}/api/invoices/${invoiceId}/debit-note`;
+}
+
+/**
+ * Generates or retrieves the 7-day HMAC-SHA256 magic link for the supplier self-service portal.
+ */
+export async function getPortalLink(invoiceId: string | number): Promise<PortalLinkResponse> {
+  const res = await fetch(`${BASE_URL}/api/invoices/${invoiceId}/portal-link`, {
+    cache: "no-store",
+  });
+  return handleResponse<PortalLinkResponse>(res);
+}
+
+/**
+ * Fetches the supplier dispute view using the HMAC magic link token.
+ */
+export async function fetchPortalDispute(token: string): Promise<SupplierDisputePortalResponse> {
+  const res = await fetch(`${BASE_URL}/api/portal/dispute?token=${encodeURIComponent(token)}`, {
+    cache: "no-store",
+  });
+  return handleResponse<SupplierDisputePortalResponse>(res);
+}
+
+/**
+ * Supplier accepts commercial deduction; creates enforceable Debit Note and marks invoice resolved.
+ */
+export async function acceptPortalDeduction(token: string): Promise<PortalAcceptResponse> {
+  const res = await fetch(`${BASE_URL}/api/portal/dispute/accept?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+  });
+  return handleResponse<PortalAcceptResponse>(res);
+}
+
+/**
+ * Supplier submits counter-explanation for review by Gemini 3.8 Flash AI.
+ */
+export async function submitPortalExplanation(
+  token: string,
+  explanation: string
+): Promise<NegotiationAssessmentResponse> {
+  const res = await fetch(`${BASE_URL}/api/portal/dispute/explain?token=${encodeURIComponent(token)}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ explanation }),
+  });
+  return handleResponse<NegotiationAssessmentResponse>(res);
+}
+
+/**
+ * Supplier uploads a corrected / amended invoice document.
+ */
+export async function uploadAmendedInvoice(
+  token: string,
+  file: File
+): Promise<ReconciliationSummaryResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(
+    `${BASE_URL}/api/portal/dispute/upload-amended?token=${encodeURIComponent(token)}`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+  return handleResponse<ReconciliationSummaryResponse>(res);
+}
+

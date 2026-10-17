@@ -84,6 +84,12 @@ export default function SplitScreenViewer({
           icon: <Layers className="w-4 h-4 text-amber-600" />,
           label: "Manual Review Required",
         };
+      case "RESOLVED_BY_DEBIT_NOTE":
+        return {
+          bg: "bg-teal-50 text-teal-800 border-teal-300 ring-1 ring-teal-500/20",
+          icon: <ShieldCheck className="w-4 h-4 text-teal-600" />,
+          label: "Settled via Debit Note",
+        };
       case "REJECTED":
       default:
         return {
@@ -115,8 +121,8 @@ export default function SplitScreenViewer({
         };
       case "UNRECOGNIZED_ITEM":
         return {
-          badge: "bg-amber-100 text-amber-800 border-amber-200",
-          label: "Unrecognized Item",
+          badge: "bg-rose-50 text-rose-800 border-rose-200",
+          label: "Unrecognized Item (Not on PO)",
         };
       case "PO_NOT_FOUND":
         return {

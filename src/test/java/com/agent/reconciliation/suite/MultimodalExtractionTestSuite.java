@@ -67,6 +67,12 @@ class MultimodalExtractionTestSuite {
     @MockBean
     private HmacTokenService hmacTokenService;
 
+    @MockBean
+    private DebitNoteGeneratorService debitNoteGeneratorService;
+
+    @MockBean
+    private com.agent.reconciliation.config.AppProperties appProperties;
+
     @Autowired
     private ObjectMapper objectMapper;
 

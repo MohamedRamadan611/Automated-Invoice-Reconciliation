@@ -18,9 +18,12 @@ import {
   Info,
   Clock,
   Sparkles,
+  Download,
+  ExternalLink,
+  Link as LinkIcon,
 } from "lucide-react";
 import type { ReconciliationSummaryResponse } from "@/lib/types";
-import { approveInvoice, rejectInvoice, regenerateDispute } from "@/lib/api";
+import { approveInvoice, rejectInvoice, regenerateDispute, getDebitNoteUrl, getPortalLink } from "@/lib/api";
 
 interface DisputeActionDrawerProps {
   invoice: ReconciliationSummaryResponse;
@@ -55,6 +58,34 @@ export default function DisputeActionDrawer({
     "Variance acceptable under emergency supply authorization. Payment released."
   );
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+
+  // Supplier Portal Link States
+  const [portalLinkCopied, setPortalLinkCopied] = useState(false);
+  const [generatingPortalLink, setGeneratingPortalLink] = useState(false);
+  const [portalModalUrl, setPortalModalUrl] = useState<string | null>(null);
+
+  const handleCopyPortalLink = async () => {
+    try {
+      setGeneratingPortalLink(true);
+      setActionError(null);
+      const res = await getPortalLink(invoice.invoiceId);
+      const fullUrl = res.portalUrl.startsWith("http")
+        ? res.portalUrl
+        : `${window.location.origin}${res.portalUrl.startsWith("/") ? "" : "/"}${res.portalUrl}`;
+      try {
+        await navigator.clipboard.writeText(fullUrl);
+      } catch {
+        // Safe fallback if browser permissions restrict direct clipboard access
+      }
+      setPortalModalUrl(fullUrl);
+      setPortalLinkCopied(true);
+      setTimeout(() => setPortalLinkCopied(false), 5000);
+    } catch (err) {
+      setActionError("Failed to generate supplier dispute portal link.");
+    } finally {
+      setGeneratingPortalLink(false);
+    }
+  };
 
   const disputeText = invoice.disputeDraft || "No dispute notice generated.";
 
@@ -321,6 +352,39 @@ export default function DisputeActionDrawer({
             </button>
           )}
 
+          {/* Action 3: Commercial Debit Note PDF */}
+          <a
+            href={getDebitNoteUrl(invoice.invoiceId)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 shadow-xs transition-colors"
+            title="Download commercial Debit Note (PDF) with itemized deduction and net balance"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Debit Note (PDF)</span>
+          </a>
+
+          {/* Action 4: Supplier Dispute Portal Magic Link */}
+          <button
+            onClick={handleCopyPortalLink}
+            disabled={generatingPortalLink}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-xs border ${
+              portalLinkCopied
+                ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
+            }`}
+            title="Generate and copy 7-day HMAC supplier dispute portal link"
+          >
+            {generatingPortalLink ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
+            ) : portalLinkCopied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+            ) : (
+              <LinkIcon className="w-3.5 h-3.5 text-indigo-500" />
+            )}
+            <span>{portalLinkCopied ? "Portal Link Copied!" : "Supplier Portal Link"}</span>
+          </button>
+
           {/* Expand / Collapse Chevron */}
           <button
             onClick={() => setIsOpen(!isOpen)}
@@ -355,6 +419,36 @@ export default function DisputeActionDrawer({
                 <span className="px-2 py-0.5 bg-emerald-200 text-emerald-900 rounded-md font-bold">Mode: Live SMTP Delivery</span>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUPPLIER PORTAL MAGIC LINK ACTIVE BANNER */}
+      {portalModalUrl && (
+        <div className="p-3.5 bg-indigo-50/90 border-b border-indigo-200 text-indigo-950 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <LinkIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+            <div className="truncate">
+              <span className="font-bold">Supplier Magic Link (7-Day TTL): </span>
+              <span className="font-mono text-[11px] text-indigo-700">{portalModalUrl}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href={portalModalUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-[11px] transition-colors"
+            >
+              <span>Open Portal</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+            <button
+              onClick={() => setPortalModalUrl(null)}
+              className="text-slate-400 hover:text-slate-600 text-xs px-1 cursor-pointer"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

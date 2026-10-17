@@ -62,6 +62,12 @@ class InvoiceControllerTest {
     @MockBean
     private com.agent.reconciliation.service.HmacTokenService hmacTokenService;
 
+    @MockBean
+    private com.agent.reconciliation.service.DebitNoteGeneratorService debitNoteGeneratorService;
+
+    @MockBean
+    private com.agent.reconciliation.config.AppProperties appProperties;
+
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -274,4 +280,56 @@ class InvoiceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.disputeDraft").value("New AI Dispute Draft"));
     }
+
+    @Test
+    @DisplayName("GET /api/invoices/{id}/debit-note should stream PDF binary")
+    void shouldStreamDebitNotePdf() throws Exception {
+        Invoice invoice = Invoice.builder()
+                .id(1L)
+                .invoiceNumber("INV-101")
+                .poReference("PO-2026-001")
+                .vendorName("Al-Wadi Farms")
+                .invoicedTotal(new BigDecimal("3200.00"))
+                .reconciliationStatus(ReconciliationStatus.FLAGGED_DISCREPANCY)
+                .build();
+
+        byte[] fakePdf = "%PDF-1.4 Mock Debit Note".getBytes();
+
+        when(invoiceRepository.findWithAuditsById(1L)).thenReturn(Optional.of(invoice));
+        when(debitNoteGeneratorService.generateDebitNotePdf(any())).thenReturn(fakePdf);
+
+        mockMvc.perform(get("/api/invoices/1/debit-note"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition", "inline; filename=\"DebitNote-INV-101.pdf\""))
+                .andExpect(content().bytes(fakePdf));
+    }
+
+    @Test
+    @DisplayName("GET /api/invoices/{id}/debit-note returns 404 when invoice not found")
+    void shouldReturn404WhenDebitNoteInvoiceNotFound() throws Exception {
+        when(invoiceRepository.findWithAuditsById(999L)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/invoices/999/debit-note"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /api/invoices/{id}/portal-link generates 7-day HMAC portal URL")
+    void shouldGenerateSupplierPortalLink() throws Exception {
+        Invoice invoice = Invoice.builder()
+                .id(1L)
+                .invoiceNumber("INV-101")
+                .build();
+
+        when(invoiceRepository.findById(1L)).thenReturn(Optional.of(invoice));
+        when(hmacTokenService.generatePortalToken(1L)).thenReturn("1:PORTAL:9999999999:mockSig");
+
+        mockMvc.perform(get("/api/invoices/1/portal-link"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("1:PORTAL:9999999999:mockSig"))
+                .andExpect(jsonPath("$.portalUrl").value("http://localhost:3000/portal/dispute?token=1:PORTAL:9999999999:mockSig"))
+                .andExpect(jsonPath("$.expiresInDays").value("7"));
+    }
 }
+

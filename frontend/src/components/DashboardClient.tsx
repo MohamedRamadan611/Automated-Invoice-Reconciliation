@@ -11,44 +11,65 @@ import {
   TrendingUp,
   RefreshCw,
   Search,
-  Filter,
   Receipt,
-  Building2,
-  Calendar,
   Layers,
   XCircle,
+  ShieldCheck,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Users,
+  ShieldAlert,
+  BarChart3,
 } from "lucide-react";
-import type { InvoiceListItemResponse, ReconciliationSummaryResponse } from "@/lib/types";
-import { fetchInvoices } from "@/lib/api";
+import type {
+  InvoiceListItemResponse,
+  ReconciliationSummaryResponse,
+  FinancialRoiSummaryResponse,
+} from "@/lib/types";
+import { fetchInvoices, fetchRoiSummary } from "@/lib/api";
 import DropzoneUploader from "@/components/DropzoneUploader";
 
 export default function DashboardClient() {
   const [invoices, setInvoices] = useState<InvoiceListItemResponse[]>([]);
+  const [roiSummary, setRoiSummary] = useState<FinancialRoiSummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRoiLoading, setIsRoiLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [isExecutiveBriefOpen, setIsExecutiveBriefOpen] = useState<boolean>(true);
 
-  const loadInvoices = async () => {
+
+  const loadData = async () => {
     setIsLoading(true);
+    setIsRoiLoading(true);
     try {
-      const data = await fetchInvoices();
-      setInvoices(data);
+      const [invoiceData, roiData] = await Promise.all([
+        fetchInvoices(),
+        fetchRoiSummary().catch((err) => {
+          console.warn("Could not fetch ROI summary:", err);
+          return null;
+        }),
+      ]);
+      setInvoices(invoiceData);
+      setRoiSummary(roiData);
     } catch (err) {
-      console.error("Failed to fetch invoices:", err);
+      console.error("Failed to load dashboard data:", err);
     } finally {
       setIsLoading(false);
+      setIsRoiLoading(false);
     }
   };
 
   useEffect(() => {
-    loadInvoices();
+    loadData();
   }, []);
 
   const handleUploadSuccess = (_summary: ReconciliationSummaryResponse) => {
-    loadInvoices();
+    loadData();
   };
 
-  // Metrics
+  // Metrics fallback if ROI summary is loading
   const metrics = useMemo(() => {
     const total = invoices.length;
     const discrepancies = invoices.filter(
@@ -80,7 +101,7 @@ export default function DashboardClient() {
   }, [invoices, searchQuery, statusFilter]);
 
   const formatEGP = (amount?: number) => {
-    if (amount === undefined || amount === null) return "—";
+    if (amount === undefined || amount === null) return "0.00 EGP";
     return new Intl.NumberFormat("en-EG", {
       style: "currency",
       currency: "EGP",
@@ -108,6 +129,12 @@ export default function DashboardClient() {
           icon: <Layers className="w-3.5 h-3.5 text-amber-600" />,
           label: "PO Not Found / Manual",
         };
+      case "RESOLVED_BY_DEBIT_NOTE":
+        return {
+          bg: "bg-teal-50 text-teal-800 border-teal-300",
+          icon: <ShieldCheck className="w-3.5 h-3.5 text-teal-600" />,
+          label: "Settled (Debit Note)",
+        };
       case "REJECTED":
         return {
           bg: "bg-slate-100 text-slate-800 border-slate-300",
@@ -123,138 +150,272 @@ export default function DashboardClient() {
     }
   };
 
+  const leakageBlocked = roiSummary?.totalCashLeakageBlocked ?? 0;
+  const invoicedVolume = roiSummary?.totalInvoicedVolume ?? metrics.totalVolume;
+  const accuracyRate = roiSummary?.accuracyRate ?? (metrics.total > 0 ? (metrics.approved / metrics.total) * 100 : 100);
+
   return (
     <div className="min-h-screen bg-slate-50/60 pb-16 font-sans">
-      {/* Top Banner */}
+      {/* Top Banner & Navigation Header */}
       <header className="bg-slate-900 text-white border-b border-slate-800 shadow-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-indigo-700 flex items-center justify-center shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-indigo-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
               <Layers className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
-                <span>Autonomous AP Reconciliation Engine</span>
-                <span className="text-[10px] uppercase font-mono font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                  Gemini Flash + Java 21
+                <span>Autonomous AP Reconciliation Agent</span>
+                <span className="text-[10px] uppercase font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  CFO Financial Guard
                 </span>
               </h1>
               <p className="text-xs text-slate-400">
-                Deterministic 3-Way Matching &bull; 0.00 EGP Zero-Tolerance &bull; Egyptian Supply Chain
+                0.00 EGP Zero-Tolerance &bull; Multimodal AI Perception &bull; Pure Java Math Verification
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={loadInvoices}
-              disabled={isLoading}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors"
+
+          {/* Navigation Tabs */}
+          <div className="flex items-center space-x-2">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-xs"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
-              <span>Refresh Queue</span>
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>Audited Queue</span>
+            </Link>
+            <Link
+              href="/vendors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700 transition-colors"
+            >
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Vendor Scorecards</span>
+              <span className="px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Phase 1
+              </span>
+            </Link>
+            <button
+              onClick={loadData}
+              disabled={isLoading || isRoiLoading}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors ml-1"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading || isRoiLoading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
             </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
-        {/* Metric Overview Strip */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Total Processed */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              <Receipt className="w-5 h-5" />
-            </div>
+        {/* CFO HERO ROI METRICS (Phase 1.1) */}
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* HERO CARD: Leakage Prevented */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 text-white shadow-xl shadow-indigo-950/20 border border-indigo-500/30 flex flex-col justify-between">
+            <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Audited Queue
-              </p>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-slate-900">{metrics.total}</span>
-                <span className="text-xs text-slate-400">Invoices</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  Direct Cash Saved
+                </span>
+                <span className="text-[10px] font-mono text-indigo-300 font-semibold">
+                  Zero-Tolerance
+                </span>
               </div>
+              <p className="text-xs text-slate-300 font-medium">Cash Leakage Blocked</p>
+              <p className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-white mt-1">
+                {formatEGP(leakageBlocked)}
+              </p>
+            </div>
+            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+              <span className="truncate">
+                Price: <strong className="text-emerald-400 font-mono font-semibold">{formatEGP(roiSummary?.priceMismatchLeakage ?? 0)}</strong>
+              </span>
+              <span className="truncate">
+                Fees: <strong className="text-indigo-300 font-mono font-semibold">{formatEGP(roiSummary?.extraFeesBlocked ?? 0)}</strong>
+              </span>
             </div>
           </div>
 
-          {/* Discrepancies */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0">
-              <AlertTriangle className="w-5 h-5" />
+          {/* CARD 2: Total Audited Volume */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Audited AP Volume
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <Receipt className="w-4 h-4" />
+              </div>
             </div>
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Discrepancies
+              <p className="text-2xl font-bold font-mono text-slate-900">
+                {formatEGP(invoicedVolume)}
               </p>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-rose-800">
-                  {metrics.discrepancies}
-                </span>
-                <span className="text-xs text-rose-700/80 font-medium">Flagged</span>
-              </div>
+              <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                <span className="font-semibold text-slate-700">{roiSummary?.totalInvoicesAudited ?? metrics.total}</span> invoices processed
+              </p>
+            </div>
+            <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Avg/Invoice:</span>
+              <span className="font-mono font-medium text-slate-700">
+                {formatEGP(metrics.total > 0 ? invoicedVolume / metrics.total : 0)}
+              </span>
             </div>
           </div>
 
-          {/* Approved */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <CheckCircle2 className="w-5 h-5" />
+          {/* CARD 3: Audit Accuracy & Clean Match Rate */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Clean Match Rate
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
             </div>
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Approved
-              </p>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-emerald-800">
-                  {metrics.approved}
-                </span>
-                <span className="text-xs text-emerald-700/80 font-medium">Auto Cleared</span>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-bold font-mono text-emerald-700">
+                  {accuracyRate.toFixed(1)}%
+                </p>
+                <span className="text-[11px] font-medium text-slate-400">100% Fidelity</span>
               </div>
+              {/* Progress Bar */}
+              <div className="w-full bg-slate-100 rounded-full h-2 mt-2 overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, Math.max(0, accuracyRate))}%` }}
+                />
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Clean Invoices:</span>
+              <span className="font-semibold text-emerald-700 font-mono">
+                {roiSummary?.cleanInvoicesCount ?? metrics.approved} / {roiSummary?.totalInvoicesAudited ?? metrics.total}
+              </span>
             </div>
           </div>
 
-          {/* Rejected */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4">
-            <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-              <XCircle className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Rejected
-              </p>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-2xl font-bold font-mono text-slate-800">
-                  {metrics.rejected}
-                </span>
-                <span className="text-xs text-slate-600/80 font-medium">Disputed</span>
+          {/* CARD 4: Discrepancy & Dispute Load */}
+          <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between hover:border-slate-300 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Intercepted Variances
+              </span>
+              <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
+                <ShieldAlert className="w-4 h-4" />
               </div>
             </div>
-          </div>
-
-          {/* Total Billed Volume */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center space-x-4 sm:col-span-2 lg:col-span-1">
-            <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-              <TrendingUp className="w-5 h-5" />
-            </div>
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                Audited Volume
+              <p className="text-2xl font-bold font-mono text-rose-700">
+                {roiSummary?.discrepancyInvoicesCount ?? metrics.discrepancies}
               </p>
-              <div className="flex items-baseline space-x-2">
-                <span className="text-base font-bold font-mono text-slate-900 truncate">
-                  {formatEGP(metrics.totalVolume)}
-                </span>
-              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Disputed invoices held for credit note
+              </p>
+            </div>
+            <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 flex items-center justify-between">
+              <span>Manual Review:</span>
+              <span className="font-semibold text-amber-600 font-mono">
+                {roiSummary?.manualReviewCount ?? metrics.manualReview}
+              </span>
             </div>
           </div>
         </section>
+
+        {/* AI EXECUTIVE BRIEF DRAWER / BANNER */}
+        {roiSummary?.executiveBrief && (() => {
+          const isArabicText = (text: string) => /[\u0600-\u06FF]/.test(text);
+          const briefBlocks = (roiSummary.executiveBrief || "")
+            .split(/\n{2,}/)
+            .map((b) => b.trim())
+            .filter((b) => b.length > 0);
+
+          return (
+            <section className="bg-gradient-to-r from-indigo-50/90 via-purple-50/70 to-slate-50/90 rounded-2xl p-5 border border-indigo-200/80 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <span>Autonomous AI Executive Brief</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold">
+                        Gemini 3.8 Flash &bull; CFO Insights
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Real-time synthesis of supply chain leakage, variance trends, and financial risk
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsExecutiveBriefOpen(!isExecutiveBriefOpen)}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-white/80 hover:bg-white px-2.5 py-1.5 rounded-lg border border-indigo-200 transition-colors self-end sm:self-auto"
+                >
+                  <span>{isExecutiveBriefOpen ? "Collapse" : "Expand Brief"}</span>
+                  {isExecutiveBriefOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+
+              {isExecutiveBriefOpen && (
+                <div className="mt-4 pt-4 border-t border-indigo-100 space-y-3">
+                  {/* Single unified card holding both English LTR and Arabic RTL */}
+                  <div className="p-4 bg-white/95 rounded-xl border border-indigo-100 shadow-xs space-y-3 font-sans">
+                    {briefBlocks.map((block, idx) => {
+                      const isAr = isArabicText(block);
+                      return (
+                        <p
+                          key={idx}
+                          dir={isAr ? "rtl" : "ltr"}
+                          className={`leading-relaxed whitespace-pre-line ${
+                            isAr
+                              ? "text-right text-slate-800 text-[13px] leading-7 pt-2.5 border-t border-slate-100"
+                              : "text-left text-slate-700 text-xs"
+                          }`}
+                        >
+                          {block}
+                        </p>
+                      );
+                    })}
+                  </div>
+
+                  {roiSummary.topOffenses && roiSummary.topOffenses.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                      <span className="text-slate-500 font-medium">Top Leakage Vulnerabilities:</span>
+                      {roiSummary.topOffenses.slice(0, 3).map((offense, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 font-medium font-mono"
+                        >
+                          <span>{offense.label}</span>
+                          <strong className="text-rose-900">({formatEGP(offense.totalAmount)})</strong>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          );
+        })()}
+
 
         {/* Upload Dropzone Section */}
         <section>
           <div className="mb-3">
             <h2 className="text-sm font-bold text-slate-800 tracking-tight flex items-center gap-2">
-              <span>Upload New Invoice Document</span>
+              <span>Upload Supplier Invoice Document</span>
               <span className="text-[11px] font-normal text-slate-500">
-                (PDF, PNG, JPG - Multimodal OCR & Line Item Extraction)
+                (PDF, PNG, JPG - Multimodal Extraction + Deterministic Java Reconciliation)
               </span>
             </h2>
           </div>
@@ -284,6 +445,7 @@ export default function DashboardClient() {
               {[
                 { key: "ALL", label: "All Records" },
                 { key: "FLAGGED_DISCREPANCY", label: "Flagged" },
+                { key: "RESOLVED_BY_DEBIT_NOTE", label: "Settled" },
                 { key: "APPROVED", label: "Approved" },
                 { key: "REJECTED", label: "Rejected" },
                 { key: "MANUAL_REVIEW", label: "Manual" },

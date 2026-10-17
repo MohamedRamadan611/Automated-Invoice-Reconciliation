@@ -8,6 +8,8 @@ import com.agent.reconciliation.domain.entity.PurchaseOrder;
 import com.agent.reconciliation.domain.entity.ReconciliationStatus;
 import com.agent.reconciliation.repository.InvoiceRepository;
 import com.agent.reconciliation.repository.PurchaseOrderRepository;
+import com.agent.reconciliation.config.AppProperties;
+import com.agent.reconciliation.service.DebitNoteGeneratorService;
 import com.agent.reconciliation.service.DisputeDraftingService;
 import com.agent.reconciliation.service.EmailNotificationService;
 import com.agent.reconciliation.service.FileStorageService;
@@ -18,6 +20,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -52,7 +55,34 @@ public class InvoiceController {
     private final EmailNotificationService emailNotificationService;
     private final DisputeDraftingService disputeDraftingService;
     private final HmacTokenService hmacTokenService;
+    private final DebitNoteGeneratorService debitNoteGeneratorService;
+    private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+
+    @Autowired
+    public InvoiceController(InvoiceRepository invoiceRepository,
+                             PurchaseOrderRepository purchaseOrderRepository,
+                             FileStorageService fileStorageService,
+                             InvoiceExtractionService extractionService,
+                             ReconciliationEngineService reconciliationEngineService,
+                             EmailNotificationService emailNotificationService,
+                             DisputeDraftingService disputeDraftingService,
+                             HmacTokenService hmacTokenService,
+                             DebitNoteGeneratorService debitNoteGeneratorService,
+                             AppProperties appProperties,
+                             ObjectMapper objectMapper) {
+        this.invoiceRepository = invoiceRepository;
+        this.purchaseOrderRepository = purchaseOrderRepository;
+        this.fileStorageService = fileStorageService;
+        this.extractionService = extractionService;
+        this.reconciliationEngineService = reconciliationEngineService;
+        this.emailNotificationService = emailNotificationService;
+        this.disputeDraftingService = disputeDraftingService;
+        this.hmacTokenService = hmacTokenService;
+        this.debitNoteGeneratorService = debitNoteGeneratorService;
+        this.appProperties = appProperties;
+        this.objectMapper = objectMapper;
+    }
 
     public InvoiceController(InvoiceRepository invoiceRepository,
                              PurchaseOrderRepository purchaseOrderRepository,
@@ -63,15 +93,9 @@ public class InvoiceController {
                              DisputeDraftingService disputeDraftingService,
                              HmacTokenService hmacTokenService,
                              ObjectMapper objectMapper) {
-        this.invoiceRepository = invoiceRepository;
-        this.purchaseOrderRepository = purchaseOrderRepository;
-        this.fileStorageService = fileStorageService;
-        this.extractionService = extractionService;
-        this.reconciliationEngineService = reconciliationEngineService;
-        this.emailNotificationService = emailNotificationService;
-        this.disputeDraftingService = disputeDraftingService;
-        this.hmacTokenService = hmacTokenService;
-        this.objectMapper = objectMapper;
+        this(invoiceRepository, purchaseOrderRepository, fileStorageService, extractionService,
+                reconciliationEngineService, emailNotificationService, disputeDraftingService,
+                hmacTokenService, null, null, objectMapper);
     }
 
     /**
@@ -324,5 +348,54 @@ public class InvoiceController {
                 notes != null ? notes : "[none]");
 
         return ResponseEntity.ok(reconciliationEngineService.toSummaryResponse(saved));
+    }
+
+    /**
+     * Streams an official, dynamically generated PDF Debit Note for the given invoice.
+     */
+    @GetMapping("/{id}/debit-note")
+    public ResponseEntity<byte[]> getDebitNotePdf(@PathVariable("id") Long id) {
+        log.info("--> [GET /api/invoices/{}/debit-note] Generating and streaming Debit Note PDF", id);
+        Invoice invoice = invoiceRepository.findWithAuditsById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
+
+        if (debitNoteGeneratorService == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Debit Note service is not configured.");
+        }
+
+        try {
+            byte[] pdfBytes = debitNoteGeneratorService.generateDebitNotePdf(invoice);
+            String filename = "DebitNote-" + (invoice.getInvoiceNumber() != null ? invoice.getInvoiceNumber().replaceAll("[^a-zA-Z0-9.-]", "_") : id) + ".pdf";
+
+            return ResponseEntity.ok()
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
+                    .body(pdfBytes);
+        } catch (Exception ex) {
+            log.error("Failed to generate Debit Note PDF for invoice ID {}: {}", id, ex.getMessage(), ex);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to render Debit Note PDF: " + ex.getMessage());
+        }
+    }
+
+    /**
+     * Returns a time-bounded (7 days) HMAC-signed magic link for the supplier dispute portal.
+     */
+    @GetMapping("/{id}/portal-link")
+    public ResponseEntity<java.util.Map<String, String>> getSupplierPortalLink(@PathVariable("id") Long id) {
+        log.info("--> [GET /api/invoices/{}/portal-link] Generating supplier magic link", id);
+        invoiceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Invoice not found with id: " + id));
+
+        String token = hmacTokenService.generatePortalToken(id);
+        String frontendUrl = appProperties != null && appProperties.mail() != null
+                ? appProperties.mail().getEffectiveFrontendUrl()
+                : "http://localhost:3000";
+
+        String portalUrl = frontendUrl + "/portal/dispute?token=" + token;
+        return ResponseEntity.ok(java.util.Map.of(
+                "token", token,
+                "portalUrl", portalUrl,
+                "expiresInDays", "7"
+        ));
     }
 }

@@ -62,6 +62,12 @@ class EmailAndPaymentOverrideTestSuite {
     @MockBean
     private HmacTokenService hmacTokenService;
 
+    @MockBean
+    private DebitNoteGeneratorService debitNoteGeneratorService;
+
+    @MockBean
+    private com.agent.reconciliation.config.AppProperties appProperties;
+
     private Invoice buildMockInvoice(ReconciliationStatus status) {
         return Invoice.builder()
                 .id(1L)

@@ -65,6 +65,12 @@ class SecurityAndEdgeCasesTestSuite {
     @MockBean
     private HmacTokenService hmacTokenService;
 
+    @MockBean
+    private DebitNoteGeneratorService debitNoteGeneratorService;
+
+    @MockBean
+    private com.agent.reconciliation.config.AppProperties appProperties;
+
     // ─── SEC-001: Prompt Injection Immunity ─────────────────────────────────────
     @Test
     @DisplayName("SEC-001: Malicious filename with prompt injection does not affect processing")
